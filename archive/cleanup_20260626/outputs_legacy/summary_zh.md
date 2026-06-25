@@ -1,0 +1,35 @@
+# all_capacities_sufficient 結果摘要
+
+- 案例目的：容量充足案例：確認外生容量寬鬆時 RM 與 WAT 維持低或為零。
+- Gurobi status：2
+- Objective：208.0
+- First-stage cost：202.0
+- Expected second-stage cost：6.0
+- Validator passed：True
+
+## First-stage Variables
+
+- `U`：`{'j1': 1.0}`
+- `V`：`{'j1': 2.0}`
+- `X`：`{'j1': 1.0}`
+- `Y`：`{'h1|j1': 7.0}`
+
+## Constraint Max Violations
+
+- `ccp_ambulance_capacity`：0.0
+- `ccp_physical_capacity`：0.0
+- `hospital_ambulance_capacity`：0.0
+- `hospital_receiving_capacity`：0.0
+- `nonnegativity`：0.0
+- `reg_definition`：0.0
+- `rm_balance`：0.0
+- `road_in_capacity`：0.0
+- `road_out_capacity`：0.0
+- `staff_workload`：0.0
+- `supply_consumption`：0.0
+- `trt_definition`：0.0
+- `wat_balance`：0.0
+
+## Note
+
+此摘要只整理既有求解結果，不改變模型、參數、case 定義或 objective。

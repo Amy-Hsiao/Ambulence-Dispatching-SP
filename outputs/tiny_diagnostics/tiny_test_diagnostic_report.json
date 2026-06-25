@@ -1,0 +1,1719 @@
+{
+  "cases": {
+    "all_capacities_sufficient": {
+      "case_checks": [
+        {
+          "detail": "",
+          "name": "validator_passed",
+          "passed": true
+        },
+        {
+          "detail": "result=b82f0150ed47, current=b82f0150ed47",
+          "name": "result_matches_current_instance",
+          "passed": true
+        },
+        {
+          "detail": "status=2",
+          "name": "gurobi_status_optimal",
+          "passed": true
+        },
+        {
+          "detail": "RM total=0",
+          "name": "RM_zero_total",
+          "passed": true
+        },
+        {
+          "detail": "WAT total=0",
+          "name": "WAT_zero_total",
+          "passed": true
+        },
+        {
+          "detail": "",
+          "name": "objective_matches_baseline",
+          "passed": true
+        }
+      ],
+      "case_metadata": {
+        "purpose": "All major capacities are loose; RM and WAT should stay at zero."
+      },
+      "constraint_binding_summary": {
+        "REG_definition": {
+          "binding_examples": [
+            [
+              "j1",
+              "minor",
+              1,
+              "s1"
+            ],
+            [
+              "j1",
+              "minor",
+              2,
+              "s1"
+            ],
+            [
+              "j1",
+              "moderate",
+              1,
+              "s1"
+            ],
+            [
+              "j1",
+              "moderate",
+              2,
+              "s1"
+            ],
+            [
+              "j1",
+              "severe",
+              1,
+              "s1"
+            ]
+          ],
+          "max_slack": 0.0,
+          "max_violation": 0.0,
+          "min_slack": 0.0,
+          "num_binding_constraints": 6
+        },
+        "RM_balance": {
+          "binding_examples": [
+            [
+              "i1",
+              "minor",
+              1,
+              "s1"
+            ],
+            [
+              "i1",
+              "minor",
+              2,
+              "s1"
+            ],
+            [
+              "i1",
+              "moderate",
+              1,
+              "s1"
+            ],
+            [
+              "i1",
+              "moderate",
+              2,
+              "s1"
+            ],
+            [
+              "i1",
+              "severe",
+              1,
+              "s1"
+            ]
+          ],
+          "max_slack": 0.0,
+          "max_violation": 0.0,
+          "min_slack": 0.0,
+          "num_binding_constraints": 6
+        },
+        "TRT_rolling_sum": {
+          "binding_examples": [
+            [
+              "j1",
+              "minor",
+              1,
+              "s1"
+            ],
+            [
+              "j1",
+              "minor",
+              2,
+              "s1"
+            ],
+            [
+              "j1",
+              "moderate",
+              1,
+              "s1"
+            ],
+            [
+              "j1",
+              "moderate",
+              2,
+              "s1"
+            ],
+            [
+              "j1",
+              "severe",
+              1,
+              "s1"
+            ]
+          ],
+          "max_slack": 0.0,
+          "max_violation": 0.0,
+          "min_slack": 0.0,
+          "num_binding_constraints": 6
+        },
+        "WAT_balance": {
+          "binding_examples": [
+            [
+              "j1",
+              "moderate",
+              1,
+              "s1"
+            ],
+            [
+              "j1",
+              "moderate",
+              2,
+              "s1"
+            ],
+            [
+              "j1",
+              "severe",
+              1,
+              "s1"
+            ],
+            [
+              "j1",
+              "severe",
+              2,
+              "s1"
+            ]
+          ],
+          "max_slack": 0.0,
+          "max_violation": 0.0,
+          "min_slack": 0.0,
+          "num_binding_constraints": 4
+        },
+        "ccp_ambulance_capacity": {
+          "binding_examples": [],
+          "max_slack": 100.0,
+          "max_violation": 0.0,
+          "min_slack": 98.0,
+          "num_binding_constraints": 0
+        },
+        "ccp_physical_capacity": {
+          "binding_examples": [],
+          "max_slack": 100.0,
+          "max_violation": 0.0,
+          "min_slack": 98.0,
+          "num_binding_constraints": 0
+        },
+        "hospital_ambulance_capacity": {
+          "binding_examples": [],
+          "max_slack": 1000.0,
+          "max_violation": 0.0,
+          "min_slack": 998.0,
+          "num_binding_constraints": 0
+        },
+        "hospital_receiving_capacity": {
+          "binding_examples": [],
+          "max_slack": 100.0,
+          "max_violation": 0.0,
+          "min_slack": 98.0,
+          "num_binding_constraints": 0
+        },
+        "road_i_to_j_capacity": {
+          "binding_examples": [],
+          "max_slack": 100.0,
+          "max_violation": 0.0,
+          "min_slack": 96.0,
+          "num_binding_constraints": 0
+        },
+        "road_j_to_h_capacity": {
+          "binding_examples": [],
+          "max_slack": 100.0,
+          "max_violation": 0.0,
+          "min_slack": 98.0,
+          "num_binding_constraints": 0
+        },
+        "staff_workload": {
+          "binding_examples": [
+            [
+              "j1",
+              1,
+              "s1"
+            ]
+          ],
+          "max_slack": 2.0,
+          "max_violation": 0.0,
+          "min_slack": 0.0,
+          "num_binding_constraints": 1
+        },
+        "supply_consumption": {
+          "binding_examples": [
+            [
+              "j1",
+              "s1"
+            ]
+          ],
+          "max_slack": 0.0,
+          "max_violation": 0.0,
+          "min_slack": 0.0,
+          "num_binding_constraints": 1
+        }
+      },
+      "objective": {
+        "components": {
+          "FI_transport": 4.0,
+          "FO_transport": 2.0,
+          "RM_penalty": 0.0,
+          "WAT_penalty": 0.0
+        },
+        "expected_second_stage_cost": 6.0,
+        "first_stage_cost": 202.0,
+        "objective_value": 208.0
+      },
+      "result_file": "outputs\\tiny_tests\\all_capacities_sufficient\\results.json",
+      "variable_totals": {
+        "FI": 4.0,
+        "FO": 2.0,
+        "REG": 4.0,
+        "RM": 0,
+        "TRT": 4.0,
+        "WAT": 0
+      }
+    },
+    "ambulance_bottleneck": {
+      "case_checks": [
+        {
+          "detail": "",
+          "name": "validator_passed",
+          "passed": true
+        },
+        {
+          "detail": "result=4466ad2d2d23, current=4466ad2d2d23",
+          "name": "result_matches_current_instance",
+          "passed": true
+        },
+        {
+          "detail": "status=2",
+          "name": "gurobi_status_optimal",
+          "passed": true
+        },
+        {
+          "detail": "binding count=2",
+          "name": "ccp_ambulance_capacity_binds",
+          "passed": true
+        },
+        {
+          "detail": "RM total=1.0",
+          "name": "RM_positive",
+          "passed": true
+        },
+        {
+          "detail": "",
+          "name": "objective_above_baseline",
+          "passed": true
+        }
+      ],
+      "case_metadata": {
+        "intended_binding": {
+          "constraint_family": "ccp_ambulance_capacity",
+          "j": "j1",
+          "scenario": "s1"
+        },
+        "purpose": "CCP ambulance capacity limits period-level ambulance-required FI."
+      },
+      "constraint_binding_summary": {
+        "REG_definition": {
+          "binding_examples": [
+            [
+              "j1",
+              "minor",
+              1,
+              "s1"
+            ],
+            [
+              "j1",
+              "minor",
+              2,
+              "s1"
+            ],
+            [
+              "j1",
+              "moderate",
+              1,
+              "s1"
+            ],
+            [
+              "j1",
+              "moderate",
+              2,
+              "s1"
+            ],
+            [
+              "j1",
+              "severe",
+              1,
+              "s1"
+            ]
+          ],
+          "max_slack": 0.0,
+          "max_violation": 0.0,
+          "min_slack": 0.0,
+          "num_binding_constraints": 6
+        },
+        "RM_balance": {
+          "binding_examples": [
+            [
+              "i1",
+              "minor",
+              1,
+              "s1"
+            ],
+            [
+              "i1",
+              "minor",
+              2,
+              "s1"
+            ],
+            [
+              "i1",
+              "moderate",
+              1,
+              "s1"
+            ],
+            [
+              "i1",
+              "moderate",
+              2,
+              "s1"
+            ],
+            [
+              "i1",
+              "severe",
+              1,
+              "s1"
+            ]
+          ],
+          "max_slack": 0.0,
+          "max_violation": 0.0,
+          "min_slack": 0.0,
+          "num_binding_constraints": 6
+        },
+        "TRT_rolling_sum": {
+          "binding_examples": [
+            [
+              "j1",
+              "minor",
+              1,
+              "s1"
+            ],
+            [
+              "j1",
+              "minor",
+              2,
+              "s1"
+            ],
+            [
+              "j1",
+              "moderate",
+              1,
+              "s1"
+            ],
+            [
+              "j1",
+              "moderate",
+              2,
+              "s1"
+            ],
+            [
+              "j1",
+              "severe",
+              1,
+              "s1"
+            ]
+          ],
+          "max_slack": 0.0,
+          "max_violation": 0.0,
+          "min_slack": 0.0,
+          "num_binding_constraints": 6
+        },
+        "WAT_balance": {
+          "binding_examples": [
+            [
+              "j1",
+              "moderate",
+              1,
+              "s1"
+            ],
+            [
+              "j1",
+              "moderate",
+              2,
+              "s1"
+            ],
+            [
+              "j1",
+              "severe",
+              1,
+              "s1"
+            ],
+            [
+              "j1",
+              "severe",
+              2,
+              "s1"
+            ]
+          ],
+          "max_slack": 0.0,
+          "max_violation": 0.0,
+          "min_slack": 0.0,
+          "num_binding_constraints": 4
+        },
+        "ccp_ambulance_capacity": {
+          "binding_examples": [
+            [
+              "j1",
+              1,
+              "s1"
+            ],
+            [
+              "j1",
+              2,
+              "s1"
+            ]
+          ],
+          "max_slack": 0.0,
+          "max_violation": 0.0,
+          "min_slack": 0.0,
+          "num_binding_constraints": 2
+        },
+        "ccp_physical_capacity": {
+          "binding_examples": [],
+          "max_slack": 4.0,
+          "max_violation": 0.0,
+          "min_slack": 1.0,
+          "num_binding_constraints": 0
+        },
+        "hospital_ambulance_capacity": {
+          "binding_examples": [],
+          "max_slack": 2.0,
+          "max_violation": 0.0,
+          "min_slack": 1.0,
+          "num_binding_constraints": 0
+        },
+        "hospital_receiving_capacity": {
+          "binding_examples": [],
+          "max_slack": 3.0,
+          "max_violation": 0.0,
+          "min_slack": 2.0,
+          "num_binding_constraints": 0
+        },
+        "road_i_to_j_capacity": {
+          "binding_examples": [],
+          "max_slack": 9.0,
+          "max_violation": 0.0,
+          "min_slack": 7.0,
+          "num_binding_constraints": 0
+        },
+        "road_j_to_h_capacity": {
+          "binding_examples": [],
+          "max_slack": 10.0,
+          "max_violation": 0.0,
+          "min_slack": 9.0,
+          "num_binding_constraints": 0
+        },
+        "staff_workload": {
+          "binding_examples": [],
+          "max_slack": 1.5,
+          "max_violation": 0.0,
+          "min_slack": 0.5,
+          "num_binding_constraints": 0
+        },
+        "supply_consumption": {
+          "binding_examples": [
+            [
+              "j1",
+              "s1"
+            ]
+          ],
+          "max_slack": 0.0,
+          "max_violation": 0.0,
+          "min_slack": 0.0,
+          "num_binding_constraints": 1
+        }
+      },
+      "objective": {
+        "components": {
+          "FI_transport": 4.0,
+          "FO_transport": 1.0,
+          "RM_penalty": 80.0,
+          "WAT_penalty": 0.0
+        },
+        "expected_second_stage_cost": 85.0,
+        "first_stage_cost": 202.0,
+        "objective_value": 287.0
+      },
+      "result_file": "outputs\\tiny_tests\\ambulance_bottleneck\\results.json",
+      "variable_totals": {
+        "FI": 4.0,
+        "FO": 1.0,
+        "REG": 4.0,
+        "RM": 1.0,
+        "TRT": 4.0,
+        "WAT": 0
+      }
+    },
+    "deterministic_baseline": {
+      "case_checks": [
+        {
+          "detail": "",
+          "name": "validator_passed",
+          "passed": true
+        },
+        {
+          "detail": "result=442aebc4d709, current=442aebc4d709",
+          "name": "result_matches_current_instance",
+          "passed": true
+        },
+        {
+          "detail": "status=2",
+          "name": "gurobi_status_optimal",
+          "passed": true
+        },
+        {
+          "detail": "",
+          "name": "minor_has_no_FO",
+          "passed": true
+        },
+        {
+          "detail": "",
+          "name": "minor_has_no_WAT",
+          "passed": true
+        },
+        {
+          "detail": "RM total=0",
+          "name": "RM_zero_total",
+          "passed": true
+        }
+      ],
+      "case_metadata": {
+        "purpose": "Baseline sanity case for flow balances, first-stage linking, and L_Amb-only FO/WAT variables."
+      },
+      "constraint_binding_summary": {
+        "REG_definition": {
+          "binding_examples": [
+            [
+              "j1",
+              "minor",
+              1,
+              "s1"
+            ],
+            [
+              "j1",
+              "minor",
+              2,
+              "s1"
+            ],
+            [
+              "j1",
+              "moderate",
+              1,
+              "s1"
+            ],
+            [
+              "j1",
+              "moderate",
+              2,
+              "s1"
+            ],
+            [
+              "j1",
+              "severe",
+              1,
+              "s1"
+            ]
+          ],
+          "max_slack": 0.0,
+          "max_violation": 0.0,
+          "min_slack": 0.0,
+          "num_binding_constraints": 6
+        },
+        "RM_balance": {
+          "binding_examples": [
+            [
+              "i1",
+              "minor",
+              1,
+              "s1"
+            ],
+            [
+              "i1",
+              "minor",
+              2,
+              "s1"
+            ],
+            [
+              "i1",
+              "moderate",
+              1,
+              "s1"
+            ],
+            [
+              "i1",
+              "moderate",
+              2,
+              "s1"
+            ],
+            [
+              "i1",
+              "severe",
+              1,
+              "s1"
+            ]
+          ],
+          "max_slack": 0.0,
+          "max_violation": 0.0,
+          "min_slack": 0.0,
+          "num_binding_constraints": 6
+        },
+        "TRT_rolling_sum": {
+          "binding_examples": [
+            [
+              "j1",
+              "minor",
+              1,
+              "s1"
+            ],
+            [
+              "j1",
+              "minor",
+              2,
+              "s1"
+            ],
+            [
+              "j1",
+              "moderate",
+              1,
+              "s1"
+            ],
+            [
+              "j1",
+              "moderate",
+              2,
+              "s1"
+            ],
+            [
+              "j1",
+              "severe",
+              1,
+              "s1"
+            ]
+          ],
+          "max_slack": 0.0,
+          "max_violation": 0.0,
+          "min_slack": 0.0,
+          "num_binding_constraints": 6
+        },
+        "WAT_balance": {
+          "binding_examples": [
+            [
+              "j1",
+              "moderate",
+              1,
+              "s1"
+            ],
+            [
+              "j1",
+              "moderate",
+              2,
+              "s1"
+            ],
+            [
+              "j1",
+              "severe",
+              1,
+              "s1"
+            ],
+            [
+              "j1",
+              "severe",
+              2,
+              "s1"
+            ]
+          ],
+          "max_slack": 0.0,
+          "max_violation": 0.0,
+          "min_slack": 0.0,
+          "num_binding_constraints": 4
+        },
+        "ccp_ambulance_capacity": {
+          "binding_examples": [
+            [
+              "j1",
+              1,
+              "s1"
+            ]
+          ],
+          "max_slack": 2.0,
+          "max_violation": 0.0,
+          "min_slack": 0.0,
+          "num_binding_constraints": 1
+        },
+        "ccp_physical_capacity": {
+          "binding_examples": [],
+          "max_slack": 4.0,
+          "max_violation": 0.0,
+          "min_slack": 1.0,
+          "num_binding_constraints": 0
+        },
+        "hospital_ambulance_capacity": {
+          "binding_examples": [
+            [
+              "h1",
+              2,
+              "s1"
+            ]
+          ],
+          "max_slack": 2.0,
+          "max_violation": 0.0,
+          "min_slack": 0.0,
+          "num_binding_constraints": 1
+        },
+        "hospital_receiving_capacity": {
+          "binding_examples": [],
+          "max_slack": 3.0,
+          "max_violation": 0.0,
+          "min_slack": 1.0,
+          "num_binding_constraints": 0
+        },
+        "road_i_to_j_capacity": {
+          "binding_examples": [],
+          "max_slack": 10.0,
+          "max_violation": 0.0,
+          "min_slack": 6.0,
+          "num_binding_constraints": 0
+        },
+        "road_j_to_h_capacity": {
+          "binding_examples": [],
+          "max_slack": 10.0,
+          "max_violation": 0.0,
+          "min_slack": 8.0,
+          "num_binding_constraints": 0
+        },
+        "staff_workload": {
+          "binding_examples": [
+            [
+              "j1",
+              1,
+              "s1"
+            ]
+          ],
+          "max_slack": 2.0,
+          "max_violation": 0.0,
+          "min_slack": 0.0,
+          "num_binding_constraints": 1
+        },
+        "supply_consumption": {
+          "binding_examples": [
+            [
+              "j1",
+              "s1"
+            ]
+          ],
+          "max_slack": 0.0,
+          "max_violation": 0.0,
+          "min_slack": 0.0,
+          "num_binding_constraints": 1
+        }
+      },
+      "objective": {
+        "components": {
+          "FI_transport": 4.0,
+          "FO_transport": 2.0,
+          "RM_penalty": 0.0,
+          "WAT_penalty": 0.0
+        },
+        "expected_second_stage_cost": 6.0,
+        "first_stage_cost": 202.0,
+        "objective_value": 208.0
+      },
+      "result_file": "outputs\\tiny_tests\\deterministic_baseline\\results.json",
+      "variable_totals": {
+        "FI": 4.0,
+        "FO": 2.0,
+        "REG": 4.0,
+        "RM": 0,
+        "TRT": 4.0,
+        "WAT": 0
+      }
+    },
+    "hospital_capacity_bottleneck": {
+      "case_checks": [
+        {
+          "detail": "",
+          "name": "validator_passed",
+          "passed": true
+        },
+        {
+          "detail": "result=01837ea2be07, current=01837ea2be07",
+          "name": "result_matches_current_instance",
+          "passed": true
+        },
+        {
+          "detail": "status=2",
+          "name": "gurobi_status_optimal",
+          "passed": true
+        },
+        {
+          "detail": "",
+          "name": "intended_hospital_capacity_is_zero",
+          "passed": true
+        },
+        {
+          "detail": "FO=0.0",
+          "name": "FO_at_bottleneck_is_zero",
+          "passed": true
+        },
+        {
+          "detail": "WAT total=2.0",
+          "name": "WAT_positive",
+          "passed": true
+        },
+        {
+          "detail": "",
+          "name": "objective_above_baseline",
+          "passed": true
+        }
+      ],
+      "case_metadata": {
+        "intended_binding": {
+          "constraint_family": "hospital_receiving_capacity",
+          "hospital": "h1",
+          "scenario": "s1",
+          "time": 2
+        },
+        "purpose": "Hospital receiving capacity is zero exactly when baseline hospital transfer would occur."
+      },
+      "constraint_binding_summary": {
+        "REG_definition": {
+          "binding_examples": [
+            [
+              "j1",
+              "minor",
+              1,
+              "s1"
+            ],
+            [
+              "j1",
+              "minor",
+              2,
+              "s1"
+            ],
+            [
+              "j1",
+              "moderate",
+              1,
+              "s1"
+            ],
+            [
+              "j1",
+              "moderate",
+              2,
+              "s1"
+            ],
+            [
+              "j1",
+              "severe",
+              1,
+              "s1"
+            ]
+          ],
+          "max_slack": 0.0,
+          "max_violation": 0.0,
+          "min_slack": 0.0,
+          "num_binding_constraints": 6
+        },
+        "RM_balance": {
+          "binding_examples": [
+            [
+              "i1",
+              "minor",
+              1,
+              "s1"
+            ],
+            [
+              "i1",
+              "minor",
+              2,
+              "s1"
+            ],
+            [
+              "i1",
+              "moderate",
+              1,
+              "s1"
+            ],
+            [
+              "i1",
+              "moderate",
+              2,
+              "s1"
+            ],
+            [
+              "i1",
+              "severe",
+              1,
+              "s1"
+            ]
+          ],
+          "max_slack": 0.0,
+          "max_violation": 0.0,
+          "min_slack": 0.0,
+          "num_binding_constraints": 6
+        },
+        "TRT_rolling_sum": {
+          "binding_examples": [
+            [
+              "j1",
+              "minor",
+              1,
+              "s1"
+            ],
+            [
+              "j1",
+              "minor",
+              2,
+              "s1"
+            ],
+            [
+              "j1",
+              "moderate",
+              1,
+              "s1"
+            ],
+            [
+              "j1",
+              "moderate",
+              2,
+              "s1"
+            ],
+            [
+              "j1",
+              "severe",
+              1,
+              "s1"
+            ]
+          ],
+          "max_slack": 0.0,
+          "max_violation": 0.0,
+          "min_slack": 0.0,
+          "num_binding_constraints": 6
+        },
+        "WAT_balance": {
+          "binding_examples": [
+            [
+              "j1",
+              "moderate",
+              1,
+              "s1"
+            ],
+            [
+              "j1",
+              "moderate",
+              2,
+              "s1"
+            ],
+            [
+              "j1",
+              "severe",
+              1,
+              "s1"
+            ],
+            [
+              "j1",
+              "severe",
+              2,
+              "s1"
+            ]
+          ],
+          "max_slack": 0.0,
+          "max_violation": 0.0,
+          "min_slack": 0.0,
+          "num_binding_constraints": 4
+        },
+        "ccp_ambulance_capacity": {
+          "binding_examples": [],
+          "max_slack": 100.0,
+          "max_violation": 0.0,
+          "min_slack": 98.0,
+          "num_binding_constraints": 0
+        },
+        "ccp_physical_capacity": {
+          "binding_examples": [],
+          "max_slack": 100.0,
+          "max_violation": 0.0,
+          "min_slack": 98.0,
+          "num_binding_constraints": 0
+        },
+        "hospital_ambulance_capacity": {
+          "binding_examples": [],
+          "max_slack": 1000.0,
+          "max_violation": 0.0,
+          "min_slack": 1000.0,
+          "num_binding_constraints": 0
+        },
+        "hospital_receiving_capacity": {
+          "binding_examples": [
+            [
+              "h1",
+              2,
+              "s1"
+            ]
+          ],
+          "max_slack": 100.0,
+          "max_violation": 0.0,
+          "min_slack": 0.0,
+          "num_binding_constraints": 1
+        },
+        "road_i_to_j_capacity": {
+          "binding_examples": [],
+          "max_slack": 100.0,
+          "max_violation": 0.0,
+          "min_slack": 96.0,
+          "num_binding_constraints": 0
+        },
+        "road_j_to_h_capacity": {
+          "binding_examples": [],
+          "max_slack": 100.0,
+          "max_violation": 0.0,
+          "min_slack": 100.0,
+          "num_binding_constraints": 0
+        },
+        "staff_workload": {
+          "binding_examples": [
+            [
+              "j1",
+              1,
+              "s1"
+            ]
+          ],
+          "max_slack": 2.0,
+          "max_violation": 0.0,
+          "min_slack": 0.0,
+          "num_binding_constraints": 1
+        },
+        "supply_consumption": {
+          "binding_examples": [
+            [
+              "j1",
+              "s1"
+            ]
+          ],
+          "max_slack": 0.0,
+          "max_violation": 0.0,
+          "min_slack": 0.0,
+          "num_binding_constraints": 1
+        }
+      },
+      "objective": {
+        "components": {
+          "FI_transport": 4.0,
+          "FO_transport": 0.0,
+          "RM_penalty": 0.0,
+          "WAT_penalty": 130.0
+        },
+        "expected_second_stage_cost": 134.0,
+        "first_stage_cost": 202.0,
+        "objective_value": 336.0
+      },
+      "result_file": "outputs\\tiny_tests\\hospital_capacity_bottleneck\\results.json",
+      "variable_totals": {
+        "FI": 4.0,
+        "FO": 0,
+        "REG": 4.0,
+        "RM": 0,
+        "TRT": 4.0,
+        "WAT": 2.0
+      }
+    },
+    "road_disruption": {
+      "case_checks": [
+        {
+          "detail": "",
+          "name": "validator_passed",
+          "passed": true
+        },
+        {
+          "detail": "result=98db68ae3b20, current=98db68ae3b20",
+          "name": "result_matches_current_instance",
+          "passed": true
+        },
+        {
+          "detail": "status=2",
+          "name": "gurobi_status_optimal",
+          "passed": true
+        },
+        {
+          "detail": "",
+          "name": "disrupted_u_is_zero",
+          "passed": true
+        },
+        {
+          "detail": "FI=0.0",
+          "name": "FI_on_disrupted_link_is_zero",
+          "passed": true
+        },
+        {
+          "detail": "",
+          "name": "RM_positive_in_disrupted_period",
+          "passed": true
+        },
+        {
+          "detail": "",
+          "name": "objective_above_baseline",
+          "passed": true
+        }
+      ],
+      "case_metadata": {
+        "intended_binding": {
+          "constraint_family": "road_i_to_j_capacity",
+          "i": "i1",
+          "j": "j1",
+          "scenario": "s1",
+          "time": 1
+        },
+        "purpose": "The only disaster-area-to-CCP link is unavailable in period 1."
+      },
+      "constraint_binding_summary": {
+        "REG_definition": {
+          "binding_examples": [
+            [
+              "j1",
+              "minor",
+              1,
+              "s1"
+            ],
+            [
+              "j1",
+              "minor",
+              2,
+              "s1"
+            ],
+            [
+              "j1",
+              "moderate",
+              1,
+              "s1"
+            ],
+            [
+              "j1",
+              "moderate",
+              2,
+              "s1"
+            ],
+            [
+              "j1",
+              "severe",
+              1,
+              "s1"
+            ]
+          ],
+          "max_slack": 0.0,
+          "max_violation": 0.0,
+          "min_slack": 0.0,
+          "num_binding_constraints": 6
+        },
+        "RM_balance": {
+          "binding_examples": [
+            [
+              "i1",
+              "minor",
+              1,
+              "s1"
+            ],
+            [
+              "i1",
+              "minor",
+              2,
+              "s1"
+            ],
+            [
+              "i1",
+              "moderate",
+              1,
+              "s1"
+            ],
+            [
+              "i1",
+              "moderate",
+              2,
+              "s1"
+            ],
+            [
+              "i1",
+              "severe",
+              1,
+              "s1"
+            ]
+          ],
+          "max_slack": 0.0,
+          "max_violation": 0.0,
+          "min_slack": 0.0,
+          "num_binding_constraints": 6
+        },
+        "TRT_rolling_sum": {
+          "binding_examples": [
+            [
+              "j1",
+              "minor",
+              1,
+              "s1"
+            ],
+            [
+              "j1",
+              "minor",
+              2,
+              "s1"
+            ],
+            [
+              "j1",
+              "moderate",
+              1,
+              "s1"
+            ],
+            [
+              "j1",
+              "moderate",
+              2,
+              "s1"
+            ],
+            [
+              "j1",
+              "severe",
+              1,
+              "s1"
+            ]
+          ],
+          "max_slack": 0.0,
+          "max_violation": 0.0,
+          "min_slack": 0.0,
+          "num_binding_constraints": 6
+        },
+        "WAT_balance": {
+          "binding_examples": [
+            [
+              "j1",
+              "moderate",
+              1,
+              "s1"
+            ],
+            [
+              "j1",
+              "moderate",
+              2,
+              "s1"
+            ],
+            [
+              "j1",
+              "severe",
+              1,
+              "s1"
+            ],
+            [
+              "j1",
+              "severe",
+              2,
+              "s1"
+            ]
+          ],
+          "max_slack": 0.0,
+          "max_violation": 0.0,
+          "min_slack": 0.0,
+          "num_binding_constraints": 4
+        },
+        "ccp_ambulance_capacity": {
+          "binding_examples": [
+            [
+              "j1",
+              2,
+              "s1"
+            ]
+          ],
+          "max_slack": 2.0,
+          "max_violation": 0.0,
+          "min_slack": 0.0,
+          "num_binding_constraints": 1
+        },
+        "ccp_physical_capacity": {
+          "binding_examples": [],
+          "max_slack": 4.0,
+          "max_violation": 0.0,
+          "min_slack": 1.0,
+          "num_binding_constraints": 0
+        },
+        "hospital_ambulance_capacity": {
+          "binding_examples": [],
+          "max_slack": 2.0,
+          "max_violation": 0.0,
+          "min_slack": 2.0,
+          "num_binding_constraints": 0
+        },
+        "hospital_receiving_capacity": {
+          "binding_examples": [],
+          "max_slack": 3.0,
+          "max_violation": 0.0,
+          "min_slack": 3.0,
+          "num_binding_constraints": 0
+        },
+        "road_i_to_j_capacity": {
+          "binding_examples": [
+            [
+              "i1",
+              "j1",
+              1,
+              "s1"
+            ]
+          ],
+          "max_slack": 6.0,
+          "max_violation": 0.0,
+          "min_slack": 0.0,
+          "num_binding_constraints": 1
+        },
+        "road_j_to_h_capacity": {
+          "binding_examples": [],
+          "max_slack": 10.0,
+          "max_violation": 0.0,
+          "min_slack": 10.0,
+          "num_binding_constraints": 0
+        },
+        "staff_workload": {
+          "binding_examples": [
+            [
+              "j1",
+              2,
+              "s1"
+            ]
+          ],
+          "max_slack": 2.0,
+          "max_violation": 0.0,
+          "min_slack": 0.0,
+          "num_binding_constraints": 1
+        },
+        "supply_consumption": {
+          "binding_examples": [
+            [
+              "j1",
+              "s1"
+            ]
+          ],
+          "max_slack": 0.0,
+          "max_violation": 0.0,
+          "min_slack": 0.0,
+          "num_binding_constraints": 1
+        }
+      },
+      "objective": {
+        "components": {
+          "FI_transport": 4.0,
+          "FO_transport": 0.0,
+          "RM_penalty": 320.0,
+          "WAT_penalty": 0.0
+        },
+        "expected_second_stage_cost": 324.0,
+        "first_stage_cost": 202.0,
+        "objective_value": 526.0
+      },
+      "result_file": "outputs\\tiny_tests\\road_disruption\\results.json",
+      "variable_totals": {
+        "FI": 4.0,
+        "FO": 0,
+        "REG": 4.0,
+        "RM": 4.0,
+        "TRT": 4.0,
+        "WAT": 0
+      }
+    },
+    "treatment_time_boundary": {
+      "case_checks": [
+        {
+          "detail": "",
+          "name": "validator_passed",
+          "passed": true
+        },
+        {
+          "detail": "result=30208f6dd360, current=30208f6dd360",
+          "name": "result_matches_current_instance",
+          "passed": true
+        },
+        {
+          "detail": "status=2",
+          "name": "gurobi_status_optimal",
+          "passed": true
+        },
+        {
+          "detail": "",
+          "name": "moderate_no_FO_before_completion",
+          "passed": true
+        },
+        {
+          "detail": "",
+          "name": "severe_no_FO_before_completion",
+          "passed": true
+        },
+        {
+          "detail": "TRT=6.0, REG=3.0",
+          "name": "TRT_total_exceeds_REG_total_due_to_rolling",
+          "passed": true
+        }
+      ],
+      "case_metadata": {
+        "intended_boundary_checks": [
+          {
+            "completion_period": -1,
+            "l": "moderate",
+            "time": 1
+          },
+          {
+            "completion_period": -2,
+            "l": "severe",
+            "time": 1
+          },
+          {
+            "completion_period": -1,
+            "l": "severe",
+            "time": 2
+          }
+        ],
+        "purpose": "Checks treatment completion boundary t - tau_l < 1 and TRT rolling sums."
+      },
+      "constraint_binding_summary": {
+        "REG_definition": {
+          "binding_examples": [
+            [
+              "j1",
+              "minor",
+              1,
+              "s1"
+            ],
+            [
+              "j1",
+              "minor",
+              2,
+              "s1"
+            ],
+            [
+              "j1",
+              "minor",
+              3,
+              "s1"
+            ],
+            [
+              "j1",
+              "moderate",
+              1,
+              "s1"
+            ],
+            [
+              "j1",
+              "moderate",
+              2,
+              "s1"
+            ]
+          ],
+          "max_slack": 0.0,
+          "max_violation": 0.0,
+          "min_slack": 0.0,
+          "num_binding_constraints": 9
+        },
+        "RM_balance": {
+          "binding_examples": [
+            [
+              "i1",
+              "minor",
+              1,
+              "s1"
+            ],
+            [
+              "i1",
+              "minor",
+              2,
+              "s1"
+            ],
+            [
+              "i1",
+              "minor",
+              3,
+              "s1"
+            ],
+            [
+              "i1",
+              "moderate",
+              1,
+              "s1"
+            ],
+            [
+              "i1",
+              "moderate",
+              2,
+              "s1"
+            ]
+          ],
+          "max_slack": 0.0,
+          "max_violation": 0.0,
+          "min_slack": 0.0,
+          "num_binding_constraints": 9
+        },
+        "TRT_rolling_sum": {
+          "binding_examples": [
+            [
+              "j1",
+              "minor",
+              1,
+              "s1"
+            ],
+            [
+              "j1",
+              "minor",
+              2,
+              "s1"
+            ],
+            [
+              "j1",
+              "minor",
+              3,
+              "s1"
+            ],
+            [
+              "j1",
+              "moderate",
+              1,
+              "s1"
+            ],
+            [
+              "j1",
+              "moderate",
+              2,
+              "s1"
+            ]
+          ],
+          "max_slack": 0.0,
+          "max_violation": 0.0,
+          "min_slack": 0.0,
+          "num_binding_constraints": 9
+        },
+        "WAT_balance": {
+          "binding_examples": [
+            [
+              "j1",
+              "moderate",
+              1,
+              "s1"
+            ],
+            [
+              "j1",
+              "moderate",
+              2,
+              "s1"
+            ],
+            [
+              "j1",
+              "moderate",
+              3,
+              "s1"
+            ],
+            [
+              "j1",
+              "severe",
+              1,
+              "s1"
+            ],
+            [
+              "j1",
+              "severe",
+              2,
+              "s1"
+            ]
+          ],
+          "max_slack": 0.0,
+          "max_violation": 0.0,
+          "min_slack": 0.0,
+          "num_binding_constraints": 6
+        },
+        "ccp_ambulance_capacity": {
+          "binding_examples": [],
+          "max_slack": 100.0,
+          "max_violation": 0.0,
+          "min_slack": 98.0,
+          "num_binding_constraints": 0
+        },
+        "ccp_physical_capacity": {
+          "binding_examples": [],
+          "max_slack": 100.0,
+          "max_violation": 0.0,
+          "min_slack": 99.0,
+          "num_binding_constraints": 0
+        },
+        "hospital_ambulance_capacity": {
+          "binding_examples": [],
+          "max_slack": 1000.0,
+          "max_violation": 0.0,
+          "min_slack": 999.0,
+          "num_binding_constraints": 0
+        },
+        "hospital_receiving_capacity": {
+          "binding_examples": [],
+          "max_slack": 100.0,
+          "max_violation": 0.0,
+          "min_slack": 99.0,
+          "num_binding_constraints": 0
+        },
+        "road_i_to_j_capacity": {
+          "binding_examples": [],
+          "max_slack": 100.0,
+          "max_violation": 0.0,
+          "min_slack": 97.0,
+          "num_binding_constraints": 0
+        },
+        "road_j_to_h_capacity": {
+          "binding_examples": [],
+          "max_slack": 100.0,
+          "max_violation": 0.0,
+          "min_slack": 99.0,
+          "num_binding_constraints": 0
+        },
+        "staff_workload": {
+          "binding_examples": [],
+          "max_slack": 1.0,
+          "max_violation": 0.0,
+          "min_slack": 0.25,
+          "num_binding_constraints": 0
+        },
+        "supply_consumption": {
+          "binding_examples": [
+            [
+              "j1",
+              "s1"
+            ]
+          ],
+          "max_slack": 0.0,
+          "max_violation": 0.0,
+          "min_slack": 0.0,
+          "num_binding_constraints": 1
+        }
+      },
+      "objective": {
+        "components": {
+          "FI_transport": 3.0,
+          "FO_transport": 1.0,
+          "RM_penalty": 0.0,
+          "WAT_penalty": 0.0
+        },
+        "expected_second_stage_cost": 4.0,
+        "first_stage_cost": 201.0,
+        "objective_value": 205.0
+      },
+      "result_file": "outputs\\tiny_tests\\treatment_time_boundary\\results.json",
+      "variable_totals": {
+        "FI": 3.0,
+        "FO": 1.0,
+        "REG": 3.0,
+        "RM": 0,
+        "TRT": 6.0,
+        "WAT": 0
+      }
+    }
+  },
+  "note": "\u6b64\u8a3a\u65b7\u53ea\u6aa2\u67e5 tiny case \u662f\u5426\u89f8\u767c\u9810\u671f\u6a21\u578b\u908f\u8f2f\uff1b\u672a\u4f7f\u7528 Benders\u3001decomposition\u3001cuts\u3001heuristics \u6216 warm starts\u3002",
+  "tolerance": 1e-06
+}

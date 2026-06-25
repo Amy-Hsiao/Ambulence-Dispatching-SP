@@ -26,7 +26,14 @@ def _load_json(path: Path) -> dict[str, Any]:
 
 
 def _latest_result_path(result_dir: Path, case: str) -> Path | None:
-    candidates = list(result_dir.glob(f"{case}_results*.json"))
+    candidates = []
+    standard_path = result_dir / case / "results.json"
+    if standard_path.exists():
+        candidates.append(standard_path)
+    case_dir = result_dir / case
+    if case_dir.exists():
+        candidates.extend(case_dir.glob(f"{case}_results*.json"))
+    candidates.extend(result_dir.glob(f"{case}_results*.json"))
     if not candidates:
         return None
     return max(candidates, key=lambda p: p.stat().st_mtime)
@@ -219,12 +226,12 @@ def case_checks(case: str, instance: dict[str, Any], results: dict[str, Any], ba
         add(
             "result_has_instance_fingerprint",
             False,
-            "result file was written by an older result_writer; rerun scripts/run_tiny_tests.py",
+            "結果檔由舊版 result_writer 寫出；請重新執行 scripts/run_tiny_tests.py",
         )
     if "gurobi_status" in results:
         add("gurobi_status_optimal", int(results["gurobi_status"]) == 2, f"status={results['gurobi_status']}")
     else:
-        add("gurobi_status_recorded", False, "result file was written by an older result_writer; rerun scripts/run_tiny_tests.py")
+        add("gurobi_status_recorded", False, "結果檔由舊版 result_writer 寫出；請重新執行 scripts/run_tiny_tests.py")
     if case == "deterministic_baseline":
         add("minor_has_no_FO", all("|minor|" not in k for k in results["nonzero_second_stage_variables"]["FO"]))
         add("minor_has_no_WAT", all("|minor|" not in k for k in results["nonzero_second_stage_variables"]["WAT"]))
@@ -265,7 +272,7 @@ def case_checks(case: str, instance: dict[str, Any], results: dict[str, Any], ba
     return checks
 
 
-def diagnose(result_dir: Path = Path("output/tiny_tests"), output_dir: Path = Path("output/tiny_diagnostics")) -> dict[str, Any]:
+def diagnose(result_dir: Path = Path("outputs/tiny_tests"), output_dir: Path = Path("outputs/tiny_diagnostics")) -> dict[str, Any]:
     output_dir.mkdir(parents=True, exist_ok=True)
     cases = {}
     baseline_results = None
@@ -277,7 +284,7 @@ def diagnose(result_dir: Path = Path("output/tiny_tests"), output_dir: Path = Pa
         instance = CASE_BUILDERS[case]()
         result_path = _latest_result_path(result_dir, case)
         if result_path is None:
-            cases[case] = {"missing_results": str(result_dir / f"{case}_results.json")}
+            cases[case] = {"missing_results": str(result_dir / case / "results.json")}
             continue
         results = _load_json(result_path)
         cases[case] = {
@@ -295,7 +302,7 @@ def diagnose(result_dir: Path = Path("output/tiny_tests"), output_dir: Path = Pa
         }
 
     report = {
-        "note": "Diagnostics only; this does not use Benders, decomposition, cuts, heuristics, or warm starts.",
+        "note": "此診斷只檢查 tiny case 是否觸發預期模型邏輯；未使用 Benders、decomposition、cuts、heuristics 或 warm starts。",
         "tolerance": TOL,
         "cases": cases,
     }
@@ -308,27 +315,27 @@ def diagnose(result_dir: Path = Path("output/tiny_tests"), output_dir: Path = Pa
 
 
 def render_markdown(report: dict[str, Any]) -> str:
-    lines = ["# Tiny Test Diagnostic Report", "", report["note"], "", f"Tolerance: `{report['tolerance']}`", ""]
+    lines = ["# Tiny Case 診斷報告", "", report["note"], "", f"容許誤差：`{report['tolerance']}`", ""]
     for case, data in report["cases"].items():
         lines += [f"## {case}", ""]
         if "missing_results" in data:
-            lines += [f"Missing results: `{data['missing_results']}`", ""]
+            lines += [f"找不到結果檔：`{data['missing_results']}`", ""]
             continue
         obj = data["objective"]
         lines += [
-            f"- Objective: `{obj['objective_value']}`",
-            f"- First-stage cost: `{obj['first_stage_cost']}`",
-            f"- Expected second-stage cost: `{obj['expected_second_stage_cost']}`",
-            f"- Cost components: `{obj['components']}`",
-            f"- Variable totals: `{data['variable_totals']}`",
+            f"- 目標值：`{obj['objective_value']}`",
+            f"- 第一階成本：`{obj['first_stage_cost']}`",
+            f"- 期望第二階成本：`{obj['expected_second_stage_cost']}`",
+            f"- 成本組成：`{obj['components']}`",
+            f"- 變數總量：`{data['variable_totals']}`",
             "",
-            "### Case Checks",
+            "### 案例檢查",
         ]
         for check in data["case_checks"]:
-            status = "PASS" if check["passed"] else "FAIL"
+            status = "通過" if check["passed"] else "未通過"
             detail = f" - {check['detail']}" if check.get("detail") else ""
             lines.append(f"- {status}: {check['name']}{detail}")
-        lines += ["", "### Binding Summary", ""]
+        lines += ["", "### Binding 摘要", ""]
         lines.append("| constraint_family | max_slack | min_slack | num_binding_constraints | binding_examples |")
         lines.append("|---|---:|---:|---:|---|")
         for family, summary in data["constraint_binding_summary"].items():
@@ -342,8 +349,9 @@ def render_markdown(report: dict[str, Any]) -> str:
 
 def main() -> None:
     diagnose()
-    print("Wrote output/tiny_diagnostics/tiny_test_diagnostic_report.md")
-    print("Wrote output/tiny_diagnostics/tiny_test_diagnostic_report.json")
+    print("Tiny case 診斷完成")
+    print("- Markdown 報告：outputs/tiny_diagnostics/tiny_test_diagnostic_report.md")
+    print("- JSON 報告：outputs/tiny_diagnostics/tiny_test_diagnostic_report.json")
 
 
 if __name__ == "__main__":

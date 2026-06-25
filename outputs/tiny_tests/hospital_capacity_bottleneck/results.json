@@ -1,0 +1,272 @@
+{
+  "constraint_family_max_violation": {
+    "ccp_ambulance_capacity": 0.0,
+    "ccp_physical_capacity": 0.0,
+    "hospital_ambulance_capacity": 0.0,
+    "hospital_receiving_capacity": 0.0,
+    "nonnegativity": 0.0,
+    "reg_definition": 0.0,
+    "rm_balance": 0.0,
+    "road_in_capacity": 0.0,
+    "road_out_capacity": 0.0,
+    "staff_workload": 0.0,
+    "supply_consumption": 0.0,
+    "trt_definition": 0.0,
+    "wat_balance": 0.0
+  },
+  "expected_second_stage_cost": 134.0,
+  "first_stage_cost": 202.0,
+  "first_stage_variables": {
+    "U": {
+      "j1": 1.0
+    },
+    "V": {
+      "j1": 2.0
+    },
+    "X": {
+      "j1": 1.0
+    },
+    "Y": {
+      "h1|j1": 7.0
+    }
+  },
+  "gurobi_status": 2,
+  "instance": "hospital_capacity_bottleneck",
+  "instance_data": {
+    "case_metadata": {
+      "intended_binding": {
+        "constraint_family": "hospital_receiving_capacity",
+        "hospital": "h1",
+        "scenario": "s1",
+        "time": 2
+      },
+      "purpose": "Hospital receiving capacity is zero exactly when baseline hospital transfer would occur."
+    },
+    "first_stage": {
+      "ca": 30,
+      "cv": 10,
+      "cy_hj": {
+        "h1": {
+          "j1": 1
+        }
+      },
+      "f_j": {
+        "j1": 145
+      },
+      "na": 4,
+      "nv": 10,
+      "sbar_h": {
+        "h1": 100
+      },
+      "ubar_j": {
+        "j1": 4
+      },
+      "vbar_j": {
+        "j1": 10
+      },
+      "ybar_j": {
+        "j1": 100
+      }
+    },
+    "name": "hospital_capacity_bottleneck",
+    "p_s": {
+      "s1": 1.0
+    },
+    "random_variables": {
+      "h_hts": {
+        "h1": {
+          "1": {
+            "s1": 100
+          },
+          "2": {
+            "s1": 0
+          }
+        }
+      },
+      "u_ijts": {
+        "i1": {
+          "j1": {
+            "1": {
+              "s1": 1.0
+            },
+            "2": {
+              "s1": 1.0
+            }
+          }
+        }
+      },
+      "w_jhts": {
+        "j1": {
+          "h1": {
+            "1": {
+              "s1": 1.0
+            },
+            "2": {
+              "s1": 1.0
+            }
+          }
+        }
+      },
+      "xi_ilts": {
+        "i1": {
+          "minor": {
+            "1": {
+              "s1": 2
+            },
+            "2": {
+              "s1": 0
+            }
+          },
+          "moderate": {
+            "1": {
+              "s1": 1
+            },
+            "2": {
+              "s1": 0
+            }
+          },
+          "severe": {
+            "1": {
+              "s1": 1
+            },
+            "2": {
+              "s1": 0
+            }
+          }
+        }
+      }
+    },
+    "second_stage": {
+      "alpha_l": {
+        "minor": 4,
+        "moderate": 2,
+        "severe": 1
+      },
+      "b_h": {
+        "h1": 10
+      },
+      "beta_l": {
+        "minor": 1,
+        "moderate": 2,
+        "severe": 3
+      },
+      "c_ij": {
+        "i1": {
+          "j1": 100
+        }
+      },
+      "c_jh": {
+        "j1": {
+          "h1": 100
+        }
+      },
+      "delta_l": {
+        "moderate": 30,
+        "severe": 100
+      },
+      "eta": 100,
+      "k_jl": {
+        "j1": {
+          "minor": 100,
+          "moderate": 100,
+          "severe": 100
+        }
+      },
+      "kappa": 100,
+      "rho_l": {
+        "minor": 20,
+        "moderate": 80,
+        "severe": 200
+      },
+      "t_ij": {
+        "i1": {
+          "j1": 1
+        }
+      },
+      "t_jh": {
+        "j1": {
+          "h1": 1
+        }
+      },
+      "tau_l": {
+        "minor": 1,
+        "moderate": 1,
+        "severe": 1
+      }
+    },
+    "sets": {
+      "H": [
+        "h1"
+      ],
+      "I": [
+        "i1"
+      ],
+      "J": [
+        "j1"
+      ],
+      "L": [
+        "minor",
+        "moderate",
+        "severe"
+      ],
+      "L_Amb": [
+        "moderate",
+        "severe"
+      ],
+      "S": [
+        "s1"
+      ],
+      "T": [
+        1,
+        2
+      ]
+    }
+  },
+  "instance_fingerprint": "01837ea2be070159008383752be48c17932efe4f14d717d84d84f861e6d0596f",
+  "nonzero_second_stage_variables": {
+    "FI": {
+      "i1|j1|minor|1|s1": 2.0,
+      "i1|j1|moderate|1|s1": 1.0,
+      "i1|j1|severe|1|s1": 1.0
+    },
+    "FO": {},
+    "REG": {
+      "j1|minor|1|s1": 2.0,
+      "j1|moderate|1|s1": 1.0,
+      "j1|severe|1|s1": 1.0
+    },
+    "RM": {},
+    "TRT": {
+      "j1|minor|1|s1": 2.0,
+      "j1|moderate|1|s1": 1.0,
+      "j1|severe|1|s1": 1.0
+    },
+    "WAT": {
+      "j1|moderate|2|s1": 1.0,
+      "j1|severe|2|s1": 1.0
+    }
+  },
+  "objective_value": 336.0,
+  "scenario_second_stage_cost": {
+    "s1": 134.0
+  },
+  "validator_summary": {
+    "max_violations": {
+      "ccp_ambulance_capacity": 0.0,
+      "ccp_physical_capacity": 0.0,
+      "hospital_ambulance_capacity": 0.0,
+      "hospital_receiving_capacity": 0.0,
+      "nonnegativity": 0.0,
+      "reg_definition": 0.0,
+      "rm_balance": 0.0,
+      "road_in_capacity": 0.0,
+      "road_out_capacity": 0.0,
+      "staff_workload": 0.0,
+      "supply_consumption": 0.0,
+      "trt_definition": 0.0,
+      "wat_balance": 0.0
+    },
+    "passed": true,
+    "tolerance": 1e-06
+  }
+}

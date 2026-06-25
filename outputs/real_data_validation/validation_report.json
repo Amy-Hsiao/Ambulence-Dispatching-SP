@@ -1,0 +1,25 @@
+{
+  "message": "Real-data loader skeleton validated CSV headers but did not infer a model instance.",
+  "next_step": "Fill raw CSVs and implement explicit field mapping to the existing instance schema.",
+  "status": "template_only",
+  "validation": {
+    "errors": [],
+    "files": {},
+    "passed": true,
+    "warnings": [
+      "missing optional/raw CSV: data\\real\\raw\\nodes.csv",
+      "missing optional/raw CSV: data\\real\\raw\\disaster_areas.csv",
+      "missing optional/raw CSV: data\\real\\raw\\candidate_ccps.csv",
+      "missing optional/raw CSV: data\\real\\raw\\hospitals.csv",
+      "missing optional/raw CSV: data\\real\\raw\\road_links_i_to_j.csv",
+      "missing optional/raw CSV: data\\real\\raw\\road_links_j_to_h.csv",
+      "missing optional/raw CSV: data\\real\\raw\\casualty_arrivals.csv",
+      "missing optional/raw CSV: data\\real\\raw\\road_availability_i_to_j.csv",
+      "missing optional/raw CSV: data\\real\\raw\\road_availability_j_to_h.csv",
+      "missing optional/raw CSV: data\\real\\raw\\hospital_capacity.csv",
+      "missing optional/raw CSV: data\\real\\raw\\scenario_probabilities.csv",
+      "missing optional/raw CSV: data\\real\\raw\\first_stage_parameters.csv",
+      "missing optional/raw CSV: data\\real\\raw\\severity_parameters.csv"
+    ]
+  }
+}

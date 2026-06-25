@@ -1,0 +1,3 @@
+# Tiny deterministic baseline runner defaults.
+instance_out: data/tiny/instances/deterministic_baseline.json
+result_dir: outputs/tiny_baseline

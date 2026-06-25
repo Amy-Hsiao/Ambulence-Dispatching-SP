@@ -18,10 +18,14 @@ from src.validation.instance_validator import validate_instance
 from src.validation.solution_validator import validate_solution
 
 
+EXPECTED_OBJECTIVE = 208.0
+TOL = 1e-6
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--instance-out", default="data/generated/deterministic_baseline.json")
-    parser.add_argument("--result-dir", default="output/tiny_baseline")
+    parser.add_argument("--instance-out", default="data/tiny/instances/deterministic_baseline.json")
+    parser.add_argument("--result-dir", default="outputs/tiny_baseline")
     args = parser.parse_args()
 
     instance = deterministic_baseline()
@@ -32,12 +36,21 @@ def main() -> None:
 
     model = build_model(instance)
     model.optimize()
+    if abs(float(model.ObjVal) - EXPECTED_OBJECTIVE) > TOL:
+        raise SystemExit(
+            "deterministic_baseline objective changed: "
+            f"expected={EXPECTED_OBJECTIVE}, actual={model.ObjVal}"
+        )
     post = validate_solution(model)
-    paths = write_results(model, args.result_dir, instance["name"])
-    print(f"objective={model.ObjVal}")
-    print(f"validator_passed={post['passed']}")
+    case_dir = Path(args.result_dir) / instance["name"]
+    paths = write_results(model, case_dir, instance["name"], standard_names=True)
+    print("Tiny baseline 求解完成")
+    print(f"- 案例：{instance['name']}")
+    print(f"- 目標值：{model.ObjVal:.6g}")
+    print(f"- 驗證通過：{'是' if post['passed'] else '否'}")
+    print("- 輸出檔案：")
     for label, path in paths.items():
-        print(f"{label}={Path(path)}")
+        print(f"  - {label}: {Path(path)}")
     if not post["passed"]:
         raise SystemExit(f"Solution validation failed: {post}")
 

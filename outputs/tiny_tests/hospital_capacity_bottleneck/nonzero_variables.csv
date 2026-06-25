@@ -1,0 +1,16 @@
+group,key,value
+X,j1,1.0
+V,j1,2.0
+U,j1,1.0
+Y,h1|j1,7.0
+FI,i1|j1|minor|1|s1,2.0
+FI,i1|j1|moderate|1|s1,1.0
+FI,i1|j1|severe|1|s1,1.0
+REG,j1|minor|1|s1,2.0
+REG,j1|moderate|1|s1,1.0
+REG,j1|severe|1|s1,1.0
+TRT,j1|minor|1|s1,2.0
+TRT,j1|moderate|1|s1,1.0
+TRT,j1|severe|1|s1,1.0
+WAT,j1|moderate|2|s1,1.0
+WAT,j1|severe|2|s1,1.0

@@ -1,0 +1,5 @@
+# Real-data template defaults.
+template_dir: data/real/templates
+raw_dir: data/real/raw
+processed_dir: data/real/processed
+processed_instance: data/real/processed/real_instance.json

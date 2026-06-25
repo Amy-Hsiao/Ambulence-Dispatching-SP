@@ -1,0 +1,184 @@
+{
+  "case_metadata": {
+    "purpose": "Baseline sanity case for flow balances, first-stage linking, and L_Amb-only FO/WAT variables."
+  },
+  "first_stage": {
+    "ca": 30,
+    "cv": 10,
+    "cy_hj": {
+      "h1": {
+        "j1": 1
+      }
+    },
+    "f_j": {
+      "j1": 145
+    },
+    "na": 1,
+    "nv": 4,
+    "sbar_h": {
+      "h1": 20
+    },
+    "ubar_j": {
+      "j1": 1
+    },
+    "vbar_j": {
+      "j1": 4
+    },
+    "ybar_j": {
+      "j1": 20
+    }
+  },
+  "name": "deterministic_baseline",
+  "p_s": {
+    "s1": 1.0
+  },
+  "random_variables": {
+    "h_hts": {
+      "h1": {
+        "1": {
+          "s1": 3
+        },
+        "2": {
+          "s1": 3
+        }
+      }
+    },
+    "u_ijts": {
+      "i1": {
+        "j1": {
+          "1": {
+            "s1": 1.0
+          },
+          "2": {
+            "s1": 1.0
+          }
+        }
+      }
+    },
+    "w_jhts": {
+      "j1": {
+        "h1": {
+          "1": {
+            "s1": 1.0
+          },
+          "2": {
+            "s1": 1.0
+          }
+        }
+      }
+    },
+    "xi_ilts": {
+      "i1": {
+        "minor": {
+          "1": {
+            "s1": 2
+          },
+          "2": {
+            "s1": 0
+          }
+        },
+        "moderate": {
+          "1": {
+            "s1": 1
+          },
+          "2": {
+            "s1": 0
+          }
+        },
+        "severe": {
+          "1": {
+            "s1": 1
+          },
+          "2": {
+            "s1": 0
+          }
+        }
+      }
+    }
+  },
+  "second_stage": {
+    "alpha_l": {
+      "minor": 4,
+      "moderate": 2,
+      "severe": 1
+    },
+    "b_h": {
+      "h1": 1
+    },
+    "beta_l": {
+      "minor": 1,
+      "moderate": 2,
+      "severe": 3
+    },
+    "c_ij": {
+      "i1": {
+        "j1": 10
+      }
+    },
+    "c_jh": {
+      "j1": {
+        "h1": 10
+      }
+    },
+    "delta_l": {
+      "moderate": 30,
+      "severe": 100
+    },
+    "eta": 2,
+    "k_jl": {
+      "j1": {
+        "minor": 4,
+        "moderate": 3,
+        "severe": 2
+      }
+    },
+    "kappa": 2,
+    "rho_l": {
+      "minor": 20,
+      "moderate": 80,
+      "severe": 200
+    },
+    "t_ij": {
+      "i1": {
+        "j1": 1
+      }
+    },
+    "t_jh": {
+      "j1": {
+        "h1": 1
+      }
+    },
+    "tau_l": {
+      "minor": 1,
+      "moderate": 1,
+      "severe": 1
+    }
+  },
+  "sets": {
+    "H": [
+      "h1"
+    ],
+    "I": [
+      "i1"
+    ],
+    "J": [
+      "j1"
+    ],
+    "L": [
+      "minor",
+      "moderate",
+      "severe"
+    ],
+    "L_Amb": [
+      "moderate",
+      "severe"
+    ],
+    "S": [
+      "s1"
+    ],
+    "T": [
+      1,
+      2
+    ]
+  }
+}

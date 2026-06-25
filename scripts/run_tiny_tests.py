@@ -27,31 +27,47 @@ TEST_ORDER = [
     "treatment_time_boundary",
 ]
 
+EXPECTED_OBJECTIVES = {
+    "deterministic_baseline": 208.0,
+    "all_capacities_sufficient": 208.0,
+    "road_disruption": 526.0,
+    "hospital_capacity_bottleneck": 336.0,
+    "ambulance_bottleneck": 287.0,
+    "treatment_time_boundary": 205.0,
+}
+TOL = 1e-6
+
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--instance-dir", default="data/generated")
-    parser.add_argument("--result-dir", default="output/tiny_tests")
+    parser.add_argument("--instance-dir", default="data/tiny/instances")
+    parser.add_argument("--result-dir", default="outputs/tiny_tests")
     args = parser.parse_args()
 
     failures = []
+    print("開始執行 tiny case regression tests")
     for name in TEST_ORDER:
         instance = CASE_BUILDERS[name]()
         write_instance(instance, f"{args.instance_dir}/{name}.json")
         pre = validate_instance(instance)
         if not pre["passed"]:
             failures.append((name, "instance", pre))
-            print(f"{name}: instance validation failed")
+            print(f"- {name}: instance validation 未通過")
             continue
         model = build_model(instance)
         model.optimize()
+        expected = EXPECTED_OBJECTIVES[name]
+        if abs(float(model.ObjVal) - expected) > TOL:
+            raise SystemExit(f"{name} objective changed: expected={expected}, actual={model.ObjVal}")
         post = validate_solution(model)
-        write_results(model, args.result_dir, name)
-        print(f"{name}: objective={model.ObjVal:.6g}, validator_passed={post['passed']}")
+        case_dir = Path(args.result_dir) / name
+        write_results(model, case_dir, name, standard_names=True)
+        print(f"- {name}: 目標值={model.ObjVal:.6g}, 預期={expected:.6g}, 驗證通過={'是' if post['passed'] else '否'}")
         if not post["passed"]:
             failures.append((name, "solution", post))
     if failures:
         raise SystemExit(f"Tiny tests failed: {failures}")
+    print("tiny case regression tests 全部通過")
 
 
 if __name__ == "__main__":

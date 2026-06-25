@@ -1,0 +1,18 @@
+# Tiny unit-test runner defaults.
+instance_dir: data/tiny/instances
+result_dir: outputs/tiny_tests
+diagnostic_dir: outputs/tiny_diagnostics
+test_order:
+  - deterministic_baseline
+  - all_capacities_sufficient
+  - road_disruption
+  - hospital_capacity_bottleneck
+  - ambulance_bottleneck
+  - treatment_time_boundary
+expected_objectives:
+  deterministic_baseline: 208
+  all_capacities_sufficient: 208
+  road_disruption: 526
+  hospital_capacity_bottleneck: 336
+  ambulance_bottleneck: 287
+  treatment_time_boundary: 205

@@ -1,0 +1,81 @@
+{
+  "constraint_family_max_violation": {
+    "ccp_ambulance_capacity": 0.0,
+    "ccp_physical_capacity": 0.0,
+    "hospital_ambulance_capacity": 0.0,
+    "hospital_receiving_capacity": 0.0,
+    "nonnegativity": 0.0,
+    "reg_definition": 0.0,
+    "rm_balance": 0.0,
+    "road_in_capacity": 0.0,
+    "road_out_capacity": 0.0,
+    "staff_workload": 0.0,
+    "supply_consumption": 0.0,
+    "trt_definition": 0.0,
+    "wat_balance": 0.0
+  },
+  "expected_second_stage_cost": 6.0,
+  "first_stage_cost": 202.0,
+  "first_stage_variables": {
+    "U": {
+      "j1": 1.0
+    },
+    "V": {
+      "j1": 2.0
+    },
+    "X": {
+      "j1": 1.0
+    },
+    "Y": {
+      "h1|j1": 7.0
+    }
+  },
+  "gurobi_status": 2,
+  "instance": "deterministic_baseline",
+  "nonzero_second_stage_variables": {
+    "FI": {
+      "i1|j1|minor|1|s1": 2.0,
+      "i1|j1|moderate|1|s1": 1.0,
+      "i1|j1|severe|1|s1": 1.0
+    },
+    "FO": {
+      "j1|h1|moderate|2|s1": 1.0,
+      "j1|h1|severe|2|s1": 1.0
+    },
+    "REG": {
+      "j1|minor|1|s1": 2.0,
+      "j1|moderate|1|s1": 1.0,
+      "j1|severe|1|s1": 1.0
+    },
+    "RM": {},
+    "TRT": {
+      "j1|minor|1|s1": 2.0,
+      "j1|moderate|1|s1": 1.0,
+      "j1|severe|1|s1": 1.0
+    },
+    "WAT": {}
+  },
+  "objective_value": 208.0,
+  "scenario_second_stage_cost": {
+    "s1": 6.0
+  },
+  "validator_summary": {
+    "max_violations": {
+      "ccp_ambulance_capacity": 0.0,
+      "ccp_physical_capacity": 0.0,
+      "hospital_ambulance_capacity": 0.0,
+      "hospital_receiving_capacity": 0.0,
+      "nonnegativity": 0.0,
+      "reg_definition": 0.0,
+      "rm_balance": 0.0,
+      "road_in_capacity": 0.0,
+      "road_out_capacity": 0.0,
+      "staff_workload": 0.0,
+      "supply_consumption": 0.0,
+      "trt_definition": 0.0,
+      "wat_balance": 0.0
+    },
+    "passed": true,
+    "tolerance": 1e-06
+  }
+}

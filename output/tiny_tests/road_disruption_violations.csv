@@ -1,0 +1,14 @@
+constraint_family,max_violation
+rm_balance,0.0
+reg_definition,0.0
+trt_definition,0.0
+wat_balance,0.0
+road_in_capacity,0.0
+road_out_capacity,0.0
+ccp_ambulance_capacity,0.0
+hospital_ambulance_capacity,0.0
+hospital_receiving_capacity,0.0
+ccp_physical_capacity,0.0
+staff_workload,0.0
+supply_consumption,0.0
+nonnegativity,0.0

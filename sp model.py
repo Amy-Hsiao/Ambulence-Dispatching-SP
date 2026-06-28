@@ -39,11 +39,6 @@ def sp_callback(model, where):
 
 
 def run_sp_model(scenario_size=5, network_scale="Small", time_limit=3600, mip_gap=0.01):
-    print("=" * 50)
-    print("RUNNING STOCHASTIC PROGRAMMING (SP) MODEL")
-    print(f" - Scenarios: {scenario_size}")
-    print(f" - Network Scale: {network_scale}")
-
     instance = config.generate_data()
     sets = instance["sets"]
     I           = sets["I"]
@@ -53,11 +48,6 @@ def run_sp_model(scenario_size=5, network_scale="Small", time_limit=3600, mip_ga
     L_transfer  = sets["L_transfer"]
     T           = sets["T"]
     S_selected  = sets["S"][:scenario_size]
-
-    print(f" - Disaster Areas: {len(I)}")
-    print(f" - Candidate CCPs: {len(J)}")
-    print(f" - Hospitals: {len(H)}")
-    print("=" * 50 + "\n")
 
     params      = instance["deterministic_parameters"]
     scenario_data = instance["scenario_data"]
@@ -99,10 +89,10 @@ def run_sp_model(scenario_size=5, network_scale="Small", time_limit=3600, mip_ga
         pass
     model._cb_data = CallbackData()
 
-    print("Optimizing SP Model (RP)...\n")
+    print("=" * 50)
+    print("\nOptimizing SP Model (RP)...\n")
     model.optimize(sp_callback)
 
-    print("\n" + "=" * 50)
     if (model.status == GRB.OPTIMAL or model.status == GRB.TIME_LIMIT) and model.SolCount > 0:
         rp_best_ub = model.ObjVal
         rp_best_lb = model.ObjBound
@@ -194,16 +184,38 @@ def run_sp_model(scenario_size=5, network_scale="Small", time_limit=3600, mip_ga
                     used = sum(FO[s, j, h, l, t].X for j in J for l in L_transfer)
                     max_hosp_amb_util = max(max_hosp_amb_util, safe_div(used, cap))
 
+        summary = vss_evpi.compute_vss_evpi(
+            instance     = instance,
+            S_selected   = S_selected,
+            rp_best_lb   = rp_best_lb,
+            rp_best_ub   = rp_best_ub,
+            rp_gap       = rp_gap,
+            time_limit   = time_limit,
+            mip_gap      = mip_gap,
+        )
+
+        def fmt_pct(value):
+            return "NA" if value is None else f"{value:.4f} %"
+
+        print("\n" + "=" * 50)
         print("SP MODEL (RP) RESULT SUMMARY")
-        print("-" * 50)
+        print(" ")
+        print(f" - Disaster Areas: {len(I)}")
+        print(f" - Candidate CCPs: {len(J)}")
+        print(f" - Hospitals: {len(H)}")
+        print(f" - Scenarios: {len(S_selected)}")
+        print(f" - Time Period: {len(T)}")
+        print(f" - Objective Value:     {rp_best_ub:.2f}")
+        print(f" - CPU Time:            {model.Runtime:.2f} s")
+        print(f" - num_vars:            {model.NumVars:d}")
+        print(f" - num_constrs:         {model.NumConstrs:d}")
+        print(f" - Nodes:               {model.NodeCount:.0f}")
+        print(f" - Iteration:           {model.IterCount:.0f} (Simplex iterations)")
         print(f" - Best UB (Objective): {rp_best_ub:.2f}")
         print(f" - Best LB (Bound):     {rp_best_lb:.2f}")
         print(f" - Final Gap:           {rp_gap:.4f}%")
-        print(f" - CPU Time:            {model.Runtime:.2f} s")
-        print(f" - Nodes:               {model.NodeCount:.0f}")
-        print(f" - Iteration:           {model.IterCount:.0f} (Simplex iterations)")
-        print(f" - num_vars:            {model.NumVars:d}")
-        print(f" - num_constrs:         {model.NumConstrs:d}")
+        print(f" - VSS(%)    = {fmt_pct(summary['VSS_pct'])}")
+        print(f" - EVPI(%)   = {fmt_pct(summary['EVPI_pct'])}")
         print("-" * 50)
         print(" - First-stage decisions (Here and Now):")
         for j in J:
@@ -225,20 +237,6 @@ def run_sp_model(scenario_size=5, network_scale="Small", time_limit=3600, mip_ga
         print(" - max_ccp_ambulance_utilization_%:      {:6.2f} %".format(max_ccp_amb_util))
         print(" - max_hospital_ambulance_utilization_%: {:6.2f} %".format(max_hosp_amb_util))
         print("=" * 50)
-
-        # ---------------------------------------------------------------- #
-        # VSS / EVPI                                                        #
-        # ---------------------------------------------------------------- #
-        summary = vss_evpi.compute_vss_evpi(
-            instance     = instance,
-            S_selected   = S_selected,
-            rp_best_lb   = rp_best_lb,
-            rp_best_ub   = rp_best_ub,
-            rp_gap       = rp_gap,
-            time_limit   = time_limit,
-            mip_gap      = mip_gap,
-        )
-        vss_evpi.print_vss_evpi_summary(summary)
         return model, summary
 
     if model.status == GRB.INFEASIBLE:

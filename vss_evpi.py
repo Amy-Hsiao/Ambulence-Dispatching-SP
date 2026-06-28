@@ -80,7 +80,6 @@ def _solve_sub(
     fixed_first_stage=None,
 ):
     """Build, solve, and return (best_lb, best_ub, gap, model, vars_dict)."""
-    print(f"\n  [VSS/EVPI] Solving {label}...")
     m, v = model_core.build_gurobi_model(
         I, J, H, L, L_transfer, T, S,
         params, scenario_data, probabilities,
@@ -94,13 +93,11 @@ def _solve_sub(
 
     feasible = m.SolCount > 0 and m.status in (GRB.OPTIMAL, GRB.TIME_LIMIT)
     if not feasible:
-        print(f"  [VSS/EVPI] WARNING: {label} has no feasible solution (status={m.status})")
         return None, None, None, m, v
 
     best_ub = m.ObjVal
     best_lb = m.ObjBound
     gap     = m.MIPGap * 100
-    print(f"  [VSS/EVPI] {label}: LB={best_lb:.2f}  UB={best_ub:.2f}  Gap={gap:.4f}%")
     return best_lb, best_ub, gap, m, v
 
 
@@ -126,10 +123,6 @@ def compute_vss_evpi(
     rp_best_lb/ub : already-solved RP bounds (BestBound / ObjVal)
     rp_gap        : RP MIPGap * 100
     """
-    print("\n" + "=" * 60)
-    print("  VSS / EVPI COMPUTATION")
-    print("=" * 60)
-
     sets    = instance["sets"]
     I       = sets["I"]
     J       = sets["J"]
@@ -188,12 +181,6 @@ def compute_vss_evpi(
             "U": {j: round(U_ev[j].X) for j in J},
             "Y": {(h, j): round(Y_ev[h, j].X) for h in H for j in J},
         }
-        print("  [VSS/EVPI] EV first-stage (opened CCPs):")
-        for j in J:
-            if ev_first_stage["X"][j] > 0.5:
-                print(
-                    f"    CCP {j}: V={ev_first_stage['V'][j]}  U={ev_first_stage['U'][j]}"
-                )
 
     # ------------------------------------------------------------------ #
     # EEV — fix EV first-stage, evaluate recourse over original scenarios #
@@ -214,7 +201,7 @@ def compute_vss_evpi(
             fixed_first_stage=ev_first_stage,
         )
     else:
-        print("  [VSS/EVPI] WARNING: EEV skipped — EV has no feasible solution")
+        pass
 
     # ------------------------------------------------------------------ #
     # WS — per-scenario deterministic, probability-weighted average       #
@@ -251,7 +238,6 @@ def compute_vss_evpi(
             ws_ub_weighted += norm_probs[s] * ub_s
         else:
             ws_feasible = False
-            print(f"  [VSS/EVPI] WARNING: WS scenario {s} infeasible — WS total unreliable")
 
     ws_ub_total = ws_ub_weighted if ws_feasible else None
 
@@ -280,12 +266,10 @@ def compute_vss_evpi(
         msg = (f"LOGIC WARNING: WS_used ({ws_used:.2f}) > RP_used ({rp_used:.2f}) — "
                "may be caused by MIP gap or time limit")
         warnings.append(msg)
-        print(f"  [VSS/EVPI] {msg}")
     if eev_used is not None and rp_used is not None and eev_used < rp_used - 1e-4:
         msg = (f"LOGIC WARNING: EEV_used ({eev_used:.2f}) < RP_used ({rp_used:.2f}) — "
                "may be caused by MIP gap or time limit")
         warnings.append(msg)
-        print(f"  [VSS/EVPI] {msg}")
 
     summary = {
         "RP":  {"best_lb": rp_best_lb,  "best_ub": rp_best_ub,  "gap": rp_gap},

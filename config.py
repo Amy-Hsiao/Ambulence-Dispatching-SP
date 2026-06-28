@@ -33,19 +33,19 @@ PARAMETERS = {
     "staff_unit_assignment_cost": 10000.0,
     "ccp_ambulance_unit_assignment_cost": 8000.0,
     "supply_allocation_cost_unit": 1800.0,
-    "total_available_staff": 96.0,
-    "total_available_ccp_ambulances": 38.0,
-    "hospital_supply_upper_bound": 350.0,
-    "ccp_staff_upper_bound": 18.0,
-    "ccp_ambulance_upper_bound": 3.0,
-    "ccp_supply_upper_bound": 300.0,
-    "hospital_ambulance_fleet": 3.0,
+    "total_available_staff": 275.0,
+    "total_available_ccp_ambulances": 109.0,
+    "hospital_supply_upper_bound": 1000.0,
+    "ccp_staff_upper_bound": 52.0,
+    "ccp_ambulance_upper_bound": 9.0,
+    "ccp_supply_upper_bound": 860.0,
+    "hospital_ambulance_fleet": 9.0,
     "ccp_ambulance_casualty_capacity": 2.0,
     "hospital_ambulance_casualty_capacity": 2.0,
     "ccp_physical_capacity_by_severity": {
-        "minor": 50.0,
-        "moderate": 15.0,
-        "severe": 5.0
+        "minor": 143.0,
+        "moderate": 43.0,
+        "severe": 14.0
     },
     "treatment_duration_by_severity": {
         "minor": 1.0,
@@ -263,7 +263,7 @@ def generate_scenarios(
             demand[scenario_id][period_id] = {}
             for disaster_id in disaster_ids:
                 rng = _rng_with_audit(audit_rows, master_seed, "demand", scenario_id, period_id, disaster_id)
-                total_new = rng.uniform(0.0, 1.4) * demand_multiplier
+                total_new = rng.uniform(0.5, 3.5) * demand_multiplier
                 demand[scenario_id][period_id][disaster_id] = {
                     severity: total_new * SEVERITY_PROBABILITY[severity]
                     for severity in SEVERITY_LEVELS
@@ -298,7 +298,7 @@ def generate_scenarios(
         hospital_capacity[scenario_id] = {}
         for hospital_id in hospital_ids:
             rng = _rng_with_audit(audit_rows, master_seed, "hospital_capacity", scenario_id, hospital_id)
-            first_period_capacity = rng.uniform(12.0, 25.0) * hospital_capacity_multiplier
+            first_period_capacity = rng.uniform(35.0, 70.0) * hospital_capacity_multiplier
             hospital_capacity[scenario_id][hospital_id] = {
                 period_id: first_period_capacity * (0.9 ** (period_idx - 1))
                 for period_idx, period_id in enumerate(period_ids, start=1)
@@ -424,8 +424,8 @@ def generate_data(sample_ratio: float = SAMPLE_RATIO) -> dict[str, Any]:
     # --- 距離矩陣與衍生參數（僅含抽樣 ID）---
     distance_ij_m = _matrix(disaster_records, ccp_records,      COORDINATE_SYSTEM)
     distance_jh_m = _matrix(ccp_records,      hospital_records, COORDINATE_SYSTEM)
-    cap_ij  = _scale_matrix(distance_ij_m, 0.08)
-    cap_jh  = _scale_matrix(distance_jh_m, 0.05)
+    cap_ij  = _scale_matrix(distance_ij_m, 0.24)
+    cap_jh  = _scale_matrix(distance_jh_m, 0.15)
     cost_ij = _transport_cost(distance_ij_m)
     cost_jh = _transport_cost(distance_jh_m)
 

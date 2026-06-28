@@ -1,0 +1,536 @@
+import csv
+import math
+import hashlib
+import random
+import warnings
+from collections.abc import Mapping
+from typing import Any
+from pathlib import Path
+
+# ==========================================
+# 參數設定區 (完全依照 Parameter Setting.docx 對齊)
+# ==========================================
+DATA_DIR = Path("data")
+DISASTER_CSV = "disaster_Taipei.csv"
+CCP_CSV = "ccp_Taipei.csv"
+HOSPITAL_CSV = "hospital_Taipei.csv"
+
+MASTER_SEED = 42
+SCENARIOS = 5
+TIME_PERIODS = 8
+COORDINATE_SYSTEM = "euclidean_m"
+DEMAND_MULTIPLIER = 1.0
+ROAD_CAPACITY_MULTIPLIER = 1.0
+HOSPITAL_CAPACITY_MULTIPLIER = 1.0
+SAMPLE_RATIO = 0.25   # 0 < ratio <= 1.0; < 1.0 時按比例抽樣做 Stress Test
+
+# 時間假設檢驗參數 (一期 30 分鐘 = 1800 秒)
+PERIOD_DURATION_SEC = 1800.0
+ASSUMED_SPEED_MPS = 11.11  # 預設緊急車輛時速 40 km/h 換算為公尺/秒
+
+PARAMETERS = {
+    "ccp_fixed_opening_cost": 3000000.0,
+    "staff_unit_assignment_cost": 10000.0,
+    "ccp_ambulance_unit_assignment_cost": 8000.0,
+    "supply_allocation_cost_unit": 1800.0,
+    "total_available_staff": 96.0,
+    "total_available_ccp_ambulances": 38.0,
+    "hospital_supply_upper_bound": 350.0,
+    "ccp_staff_upper_bound": 18.0,
+    "ccp_ambulance_upper_bound": 3.0,
+    "ccp_supply_upper_bound": 300.0,
+    "hospital_ambulance_fleet": 3.0,
+    "ccp_ambulance_casualty_capacity": 2.0,
+    "hospital_ambulance_casualty_capacity": 2.0,
+    "ccp_physical_capacity_by_severity": {
+        "minor": 50.0,
+        "moderate": 15.0,
+        "severe": 5.0
+    },
+    "treatment_duration_by_severity": {
+        "minor": 1.0,
+        "moderate": 2.0,
+        "severe": 1.0
+    },
+    "staff_treatment_rate_by_severity": {
+        "minor": 3.0,
+        "moderate": 2.0,
+        "severe": 1.0
+    },
+    "supply_consumption_by_severity": {
+        "minor": 1.0,
+        "moderate": 2.0,
+        "severe": 4.0
+    },
+    "disaster_area_remaining_penalty_by_severity": {
+        "minor": 2000.0,
+        "moderate": 50000.0,
+        "severe": 100000.0
+    },
+    "ccp_waiting_penalty_by_severity": {
+        "minor": 0.0,
+        "moderate": 25000.0,
+        "severe": 50000.0
+    }
+}
+
+# ==========================================
+# 常數定義
+# ==========================================
+SEVERITY_LEVELS = ("minor", "moderate", "severe")
+TRANSFER_SEVERITY_LEVELS = ("moderate", "severe")
+SEVERITY_PROBABILITY = {
+    "minor": 0.6,
+    "moderate": 0.3,
+    "severe": 0.1,
+}
+
+# ==========================================
+# 基礎資料結構與載入邏輯
+# ==========================================
+class CoordinateRecord:
+    def __init__(self, id: str, x: float, y: float, name: str | None = None):
+        self.id = id
+        self.x = x
+        self.y = y
+        self.name = name
+
+    def asdict(self):
+        return {"id": self.id, "x": self.x, "y": self.y, "name": self.name}
+
+
+def read_coordinate_csv(path: Path) -> list[CoordinateRecord]:
+    if not path.exists():
+        records = []
+        prefix = path.stem.split("_")[0]
+        count = 10 if prefix == "disaster" else (5 if prefix == "ccp" else 4)
+        for i in range(count):
+            records.append(CoordinateRecord(id=f"{prefix[0].upper()}{i+1:02d}", x=i*100.0, y=i*100.0, name=f"{prefix}_{i}"))
+        return records
+
+    with path.open("r", encoding="utf-8-sig", newline="") as handle:
+        reader = csv.DictReader(handle)
+        records = []
+        for row in reader:
+            index_field = "" if "" in row else (reader.fieldnames or [""])[0]
+            records.append(
+                CoordinateRecord(
+                    id=str(row[index_field]),
+                    x=float(row["X"]),
+                    y=float(row["Y"]),
+                    name=row.get("name") or None,
+                )
+            )
+    return records
+
+
+# ==========================================
+# 距離與成本計算邏輯
+# ==========================================
+def _haversine_m(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    radius_m = 6_371_000.0
+    phi1 = math.radians(lat1)
+    phi2 = math.radians(lat2)
+    d_phi = math.radians(lat2 - lat1)
+    d_lambda = math.radians(lon2 - lon1)
+    a = (
+        math.sin(d_phi / 2.0) ** 2
+        + math.cos(phi1) * math.cos(phi2) * math.sin(d_lambda / 2.0) ** 2
+    )
+    return 2.0 * radius_m * math.atan2(math.sqrt(a), math.sqrt(1.0 - a))
+
+
+def _distance_m(a: CoordinateRecord, b: CoordinateRecord, coordinate_system: str) -> float:
+    coordinate_system = coordinate_system.lower()
+    if coordinate_system in {"latlon", "lat_lon", "haversine"}:
+        return _haversine_m(a.y, a.x, b.y, b.x)
+    if coordinate_system in {"euclidean", "euclidean_m", "twd97", "meter", "meters"}:
+        return math.hypot(a.x - b.x, a.y - b.y)
+    raise ValueError("coordinate_system must be one of euclidean_m/twd97/meters or latlon/haversine")
+
+
+def _matrix(origins: list[CoordinateRecord], destinations: list[CoordinateRecord], coordinate_system: str) -> dict[str, dict[str, float]]:
+    return {
+        origin.id: {
+            destination.id: _distance_m(origin, destination, coordinate_system)
+            for destination in destinations
+        }
+        for origin in origins
+    }
+
+
+def _scale_matrix(matrix: dict[str, dict[str, float]], scale: float) -> dict[str, dict[str, float]]:
+    return {
+        origin_id: {
+            destination_id: value * scale
+            for destination_id, value in destinations.items()
+        }
+        for origin_id, destinations in matrix.items()
+    }
+
+
+def _transport_cost(matrix: dict[str, dict[str, float]]) -> dict[str, dict[str, float]]:
+    return {
+        origin_id: {
+            destination_id: 100.0 + 150.0 * distance_m / 1000.0
+            for destination_id, distance_m in destinations.items()
+        }
+        for origin_id, destinations in matrix.items()
+    }
+
+
+def _indexed_scalar(value: float, ids: list[str]) -> dict[str, float]:
+    return {item_id: float(value) for item_id in ids}
+
+
+def _build_deterministic_parameters(ccp_ids: list[str], hospital_ids: list[str]) -> dict[str, Any]:
+    supply_allocation_cost = {
+        hospital_id: {
+            ccp_id: float(PARAMETERS["supply_allocation_cost_unit"])
+            for ccp_id in ccp_ids
+        }
+        for hospital_id in hospital_ids
+    }
+    return {
+        "ccp_fixed_opening_cost": _indexed_scalar(PARAMETERS["ccp_fixed_opening_cost"], ccp_ids),
+        "staff_unit_assignment_cost": float(PARAMETERS["staff_unit_assignment_cost"]),
+        "ccp_ambulance_unit_assignment_cost": float(PARAMETERS["ccp_ambulance_unit_assignment_cost"]),
+        "supply_allocation_cost_from_hospital_to_ccp": supply_allocation_cost,
+        "total_available_staff": float(PARAMETERS["total_available_staff"]),
+        "total_available_ccp_ambulances": float(PARAMETERS["total_available_ccp_ambulances"]),
+        "hospital_supply_upper_bound": _indexed_scalar(PARAMETERS["hospital_supply_upper_bound"], hospital_ids),
+        "ccp_staff_upper_bound": _indexed_scalar(PARAMETERS["ccp_staff_upper_bound"], ccp_ids),
+        "ccp_ambulance_upper_bound": _indexed_scalar(PARAMETERS["ccp_ambulance_upper_bound"], ccp_ids),
+        "ccp_supply_upper_bound": _indexed_scalar(PARAMETERS["ccp_supply_upper_bound"], ccp_ids),
+        "hospital_ambulance_fleet": _indexed_scalar(PARAMETERS["hospital_ambulance_fleet"], hospital_ids),
+        "ccp_ambulance_casualty_capacity": float(PARAMETERS["ccp_ambulance_casualty_capacity"]),
+        "hospital_ambulance_casualty_capacity": float(PARAMETERS["hospital_ambulance_casualty_capacity"]),
+        "ccp_physical_capacity_by_severity": PARAMETERS["ccp_physical_capacity_by_severity"],
+        "treatment_duration_by_severity": PARAMETERS["treatment_duration_by_severity"],
+        "staff_treatment_rate_by_severity": PARAMETERS["staff_treatment_rate_by_severity"],
+        "supply_consumption_by_severity": PARAMETERS["supply_consumption_by_severity"],
+        "disaster_area_remaining_penalty_by_severity": PARAMETERS["disaster_area_remaining_penalty_by_severity"],
+        "ccp_waiting_penalty_by_severity": PARAMETERS["ccp_waiting_penalty_by_severity"],
+    }
+
+
+# ==========================================
+# 隨機數生成與情境生成邏輯
+# ==========================================
+def stable_seed(master_seed: int, *parts: Any) -> int:
+    material = "|".join([str(master_seed), *(str(part) for part in parts)])
+    digest = hashlib.sha256(material.encode("utf-8")).hexdigest()
+    return int(digest[:16], 16) % (2**32)
+
+
+def _rng_with_audit(audit_rows: list[dict[str, Any]], master_seed: int, random_object: str, *parts: Any) -> random.Random:
+    seed = stable_seed(master_seed, random_object, *parts)
+    audit_rows.append({
+        "random_object": random_object,
+        "parts": "|".join(str(part) for part in parts),
+        "seed": seed,
+    })
+    return random.Random(seed)
+
+
+def generate_scenarios(
+    disaster_ids: list[str],
+    ccp_ids: list[str],
+    hospital_ids: list[str],
+    scenario_ids: list[str] | None = None,
+    demand_multiplier: float = DEMAND_MULTIPLIER,
+    road_capacity_multiplier: float = ROAD_CAPACITY_MULTIPLIER,
+    hospital_capacity_multiplier: float = HOSPITAL_CAPACITY_MULTIPLIER,
+    num_periods: int = TIME_PERIODS,
+    master_seed: int = MASTER_SEED
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    audit_rows: list[dict[str, Any]] = []
+
+    if scenario_ids is None:
+        scenario_ids = [f"S{idx + 1:03d}" for idx in range(SCENARIOS)]
+
+    period_ids = [f"T{idx + 1:03d}" for idx in range(num_periods)]
+    scenario_probability = 1.0 / len(scenario_ids)
+
+    demand: dict[str, dict[str, dict[str, dict[str, float]]]] = {}
+    road_ij: dict[str, dict[str, dict[str, dict[str, float]]]] = {}
+    road_jh: dict[str, dict[str, dict[str, dict[str, float]]]] = {}
+    hospital_capacity: dict[str, dict[str, dict[str, float]]] = {}
+
+    for scenario_id in scenario_ids:
+        demand[scenario_id] = {}
+        for period_idx, period_id in enumerate(period_ids, start=1):
+            demand[scenario_id][period_id] = {}
+            for disaster_id in disaster_ids:
+                rng = _rng_with_audit(audit_rows, master_seed, "demand", scenario_id, period_id, disaster_id)
+                total_new = rng.uniform(0.0, 1.4) * demand_multiplier
+                demand[scenario_id][period_id][disaster_id] = {
+                    severity: total_new * SEVERITY_PROBABILITY[severity]
+                    for severity in SEVERITY_LEVELS
+                }
+
+        road_ij[scenario_id] = {}
+        for disaster_id in disaster_ids:
+            road_ij[scenario_id][disaster_id] = {}
+            for ccp_id in ccp_ids:
+                rng = _rng_with_audit(audit_rows, master_seed, "road_ij", scenario_id, disaster_id, ccp_id)
+                first_availability = rng.uniform(0.0, 0.4)
+                recovery_rng = _rng_with_audit(audit_rows, master_seed, "road_ij_recovery", scenario_id, disaster_id, ccp_id)
+                recovery_rate = recovery_rng.uniform(0.05, 0.08)
+                road_ij[scenario_id][disaster_id][ccp_id] = {
+                    period_id: min(first_availability * road_capacity_multiplier + recovery_rate * (period_idx - 1), 1.0)
+                    for period_idx, period_id in enumerate(period_ids, start=1)
+                }
+
+        road_jh[scenario_id] = {}
+        for ccp_id in ccp_ids:
+            road_jh[scenario_id][ccp_id] = {}
+            for hospital_id in hospital_ids:
+                rng = _rng_with_audit(audit_rows, master_seed, "road_jh", scenario_id, ccp_id, hospital_id)
+                first_availability = rng.uniform(0.0, 0.4)
+                recovery_rng = _rng_with_audit(audit_rows, master_seed, "road_jh_recovery", scenario_id, ccp_id, hospital_id)
+                recovery_rate = recovery_rng.uniform(0.05, 0.08)
+                road_jh[scenario_id][ccp_id][hospital_id] = {
+                    period_id: min(first_availability * road_capacity_multiplier + recovery_rate * (period_idx - 1), 1.0)
+                    for period_idx, period_id in enumerate(period_ids, start=1)
+                }
+
+        hospital_capacity[scenario_id] = {}
+        for hospital_id in hospital_ids:
+            rng = _rng_with_audit(audit_rows, master_seed, "hospital_capacity", scenario_id, hospital_id)
+            first_period_capacity = rng.uniform(12.0, 25.0) * hospital_capacity_multiplier
+            hospital_capacity[scenario_id][hospital_id] = {
+                period_id: first_period_capacity * (0.9 ** (period_idx - 1))
+                for period_idx, period_id in enumerate(period_ids, start=1)
+            }
+
+    scenario_data = {
+        "probability": {scenario_id: scenario_probability for scenario_id in scenario_ids},
+        "demand": demand,
+        "road_availability_ij": road_ij,
+        "road_availability_jh": road_jh,
+        "hospital_receiving_capacity": hospital_capacity,
+    }
+    return scenario_data, audit_rows
+
+
+def _average_nested_by_scenario(scenario_values: dict[str, Any], scenario_ids: list[str]) -> Any:
+    first = scenario_values[scenario_ids[0]]
+    if isinstance(first, dict):
+        return {
+            key: _average_nested_by_scenario(
+                {scenario_id: scenario_values[scenario_id][key] for scenario_id in scenario_ids},
+                scenario_ids,
+            )
+            for key in first
+        }
+    return sum(float(scenario_values[scenario_id]) for scenario_id in scenario_ids) / len(scenario_ids)
+
+
+# ==========================================
+# 驗證邏輯
+# ==========================================
+def validate_instance(instance: dict[str, Any]) -> None:
+    sets = instance["sets"]
+    for set_name in ("I", "J", "H", "L", "L_transfer", "T", "S"):
+        if len(sets[set_name]) != len(set(sets[set_name])):
+            raise ValueError(f"Set {set_name} contains duplicated indices")
+
+    probabilities = instance["scenario_data"]["probability"]
+    probability_sum = sum(float(value) for value in probabilities.values())
+    if abs(probability_sum - 1.0) > 1e-9:
+        raise ValueError(f"Scenario probability must sum to 1, got {probability_sum}")
+
+    dm = instance["distance_matrices"]
+    max_dist_ij = max(max(dists.values()) for dists in dm["distance_ij_m"].values()) if dm["distance_ij_m"] else 0
+    max_dist_jh = max(max(dists.values()) for dists in dm["distance_jh_m"].values()) if dm["distance_jh_m"] else 0
+    max_distance = max(max_dist_ij, max_dist_jh)
+    estimated_max_travel_time = max_distance / ASSUMED_SPEED_MPS
+
+    if estimated_max_travel_time > PERIOD_DURATION_SEC:
+        warnings.warn(
+            f"[模型假設警訊] 最大單程預估旅行時間 ({estimated_max_travel_time/60:.2f} 分鐘) "
+            f"已超過設定之期長 ({PERIOD_DURATION_SEC/60:.2f} 分鐘)！"
+            f"這將使 SP model 無跨期車輛追蹤之基本假設失效，"
+            f"建議調整路網範圍、提升救援車速參數或增加期長週期。"
+        )
+
+    def _reject_negative_numbers(value: Any, path: str = "instance") -> None:
+        if isinstance(value, bool):
+            return
+        if isinstance(value, (int, float)):
+            if value < 0:
+                raise ValueError(f"Negative value at {path}: {value}")
+            return
+        if isinstance(value, Mapping):
+            for key, child in value.items():
+                _reject_negative_numbers(child, f"{path}.{key}")
+        elif isinstance(value, list):
+            for idx, child in enumerate(value):
+                _reject_negative_numbers(child, f"{path}[{idx}]")
+
+    _reject_negative_numbers(instance)
+
+
+# ==========================================
+# 主生成函數
+# ==========================================
+def generate_data(sample_ratio: float = SAMPLE_RATIO) -> dict[str, Any]:
+    if not (0 < sample_ratio <= 1.0):
+        raise ValueError(f"sample_ratio must be in (0, 1.0], got {sample_ratio}")
+
+    # --- 載入完整資料 ---
+    all_disaster_records = read_coordinate_csv(DATA_DIR / DISASTER_CSV)
+    all_ccp_records      = read_coordinate_csv(DATA_DIR / CCP_CSV)
+    all_hospital_records = read_coordinate_csv(DATA_DIR / HOSPITAL_CSV)
+
+    full_n_disaster = len(all_disaster_records)
+    full_n_ccp      = len(all_ccp_records)
+    full_n_hospital = len(all_hospital_records)
+
+    # --- 按比例抽樣（向上取整，最少 1）---
+    if sample_ratio < 1.0:
+        sampling_rng = random.Random(MASTER_SEED)
+        n_disaster = max(1, math.ceil(full_n_disaster * sample_ratio))
+        n_ccp      = max(1, math.ceil(full_n_ccp      * sample_ratio))
+        n_hospital = max(1, math.ceil(full_n_hospital  * sample_ratio))
+        sampled_disaster = sampling_rng.sample(all_disaster_records, n_disaster)
+        sampled_ccp      = sampling_rng.sample(all_ccp_records,      n_ccp)
+        sampled_hospital = sampling_rng.sample(all_hospital_records,  n_hospital)
+        # 保留原始載入順序，避免索引不穩定
+        disaster_id_set  = {r.id for r in sampled_disaster}
+        ccp_id_set       = {r.id for r in sampled_ccp}
+        hospital_id_set  = {r.id for r in sampled_hospital}
+        disaster_records = [r for r in all_disaster_records if r.id in disaster_id_set]
+        ccp_records      = [r for r in all_ccp_records      if r.id in ccp_id_set]
+        hospital_records = [r for r in all_hospital_records  if r.id in hospital_id_set]
+    else:
+        disaster_records = all_disaster_records
+        ccp_records      = all_ccp_records
+        hospital_records = all_hospital_records
+
+    disaster_ids = [record.id for record in disaster_records]
+    ccp_ids      = [record.id for record in ccp_records]
+    hospital_ids = [record.id for record in hospital_records]
+
+    # --- 依實際 CCP 數量等比例縮放總資源（向上取整）---
+    j_actual = len(ccp_ids)
+    scaled_total_staff      = math.ceil(PARAMETERS["total_available_staff"]          * j_actual / full_n_ccp)
+    scaled_total_ambulances = math.ceil(PARAMETERS["total_available_ccp_ambulances"] * j_actual / full_n_ccp)
+
+    scenario_ids = [f"S{idx + 1:03d}" for idx in range(SCENARIOS)]
+    period_ids   = [f"T{idx + 1:03d}" for idx in range(TIME_PERIODS)]
+
+    # --- 距離矩陣與衍生參數（僅含抽樣 ID）---
+    distance_ij_m = _matrix(disaster_records, ccp_records,      COORDINATE_SYSTEM)
+    distance_jh_m = _matrix(ccp_records,      hospital_records, COORDINATE_SYSTEM)
+    cap_ij  = _scale_matrix(distance_ij_m, 0.08)
+    cap_jh  = _scale_matrix(distance_jh_m, 0.05)
+    cost_ij = _transport_cost(distance_ij_m)
+    cost_jh = _transport_cost(distance_jh_m)
+
+    # --- 確定性參數（覆寫總資源數量）---
+    deterministic_parameters = _build_deterministic_parameters(ccp_ids, hospital_ids)
+    deterministic_parameters["total_available_staff"]          = float(scaled_total_staff)
+    deterministic_parameters["total_available_ccp_ambulances"] = float(scaled_total_ambulances)
+
+    scenario_data, seed_audit = generate_scenarios(disaster_ids, ccp_ids, hospital_ids)
+
+    baseline_scenario_data, baseline_seed_audit = generate_scenarios(
+        disaster_ids, ccp_ids, hospital_ids,
+        scenario_ids=["B00"],
+        demand_multiplier=1.0,
+        road_capacity_multiplier=1.0,
+        hospital_capacity_multiplier=1.0,
+        num_periods=TIME_PERIODS,
+        master_seed=MASTER_SEED
+    )
+    seed_audit.extend(baseline_seed_audit)
+
+    deterministic_expected_value = {
+        "demand": _average_nested_by_scenario(scenario_data["demand"], scenario_ids),
+        "road_availability_ij": _average_nested_by_scenario(scenario_data["road_availability_ij"], scenario_ids),
+        "road_availability_jh": _average_nested_by_scenario(scenario_data["road_availability_jh"], scenario_ids),
+        "hospital_receiving_capacity": _average_nested_by_scenario(scenario_data["hospital_receiving_capacity"], scenario_ids),
+    }
+
+    deterministic_baseline = {
+        "multipliers": {
+            "demand_multiplier": 1.0,
+            "road_capacity_multiplier": 1.0,
+            "hospital_capacity_multiplier": 1.0,
+        },
+        "scenario_label": "B00",
+        "demand": baseline_scenario_data["demand"]["B00"],
+        "road_availability_ij": baseline_scenario_data["road_availability_ij"]["B00"],
+        "road_availability_jh": baseline_scenario_data["road_availability_jh"]["B00"],
+        "hospital_receiving_capacity": baseline_scenario_data["hospital_receiving_capacity"]["B00"],
+    }
+
+    instance = {
+        "metadata": {
+            "master_seed": MASTER_SEED,
+            "coordinate_system": COORDINATE_SYSTEM,
+            "num_scenarios": SCENARIOS,
+            "num_periods": TIME_PERIODS,
+            "multipliers": {
+                "demand_multiplier": DEMAND_MULTIPLIER,
+                "road_capacity_multiplier": ROAD_CAPACITY_MULTIPLIER,
+                "hospital_capacity_multiplier": HOSPITAL_CAPACITY_MULTIPLIER,
+            },
+            "sample_ratio": sample_ratio,
+            "sampled_counts": {
+                "disaster_areas": len(disaster_ids),
+                "ccps": len(ccp_ids),
+                "hospitals": len(hospital_ids),
+            },
+        },
+        "sets": {
+            "I": disaster_ids,
+            "J": ccp_ids,
+            "H": hospital_ids,
+            "L": list(SEVERITY_LEVELS),
+            "L_transfer": list(TRANSFER_SEVERITY_LEVELS),
+            "T": period_ids,
+            "S": scenario_ids,
+        },
+        "coordinates": {
+            "disaster_areas": [record.asdict() for record in disaster_records],
+            "ccps": [record.asdict() for record in ccp_records],
+            "hospitals": [record.asdict() for record in hospital_records],
+        },
+        "distance_matrices": {
+            "distance_ij_m": distance_ij_m,
+            "distance_jh_m": distance_jh_m,
+        },
+        "road_capacity": {
+            "cap_ij": cap_ij,
+            "cap_jh": cap_jh,
+        },
+        "transport_cost": {
+            "cost_ij": cost_ij,
+            "cost_jh": cost_jh,
+        },
+        "deterministic_parameters": deterministic_parameters,
+        "scenario_data": scenario_data,
+        "deterministic_data": {
+            "baseline": deterministic_baseline,
+            "expected_value": deterministic_expected_value,
+        },
+        "random_seed_audit": seed_audit,
+        "generation_assumptions": {
+            "severity_probability": SEVERITY_PROBABILITY,
+            "road_capacity_formula": "distance_m * 0.05",
+            "transport_cost_formula": "100 + 150 * distance_m / 1000",
+            "hospital_capacity_decay": "period_1_capacity * 0.9^(t - 1)",
+        },
+    }
+
+    validate_instance(instance)
+    return instance
+
+
+if __name__ == "__main__":
+    print("Generating data...")
+    data = generate_data()
+    print(f"Data generated successfully!")

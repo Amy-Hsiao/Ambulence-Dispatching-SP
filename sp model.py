@@ -4,10 +4,12 @@ import gurobipy as gp
 from gurobipy import GRB
 
 import config
+import model_core
+import vss_evpi
 
 
 def sp_callback(model, where):
-    """Print incumbent/bound progress when Gurobi finds a better UB or every 10 seconds."""
+    """Print progress on new best UB or every 10 seconds."""
     if where == GRB.Callback.MIP:
         current_time = time.time()
         if not hasattr(model._cb_data, "last_print_time"):
@@ -44,251 +46,207 @@ def run_sp_model(scenario_size=5, network_scale="Small", time_limit=3600, mip_ga
 
     instance = config.generate_data()
     sets = instance["sets"]
-    I = sets["I"]
-    J = sets["J"]
-    H = sets["H"]
-    L = sets["L"]
-    L_transfer = sets["L_transfer"]
-    T = sets["T"]
-    S = sets["S"][:scenario_size]
+    I           = sets["I"]
+    J           = sets["J"]
+    H           = sets["H"]
+    L           = sets["L"]
+    L_transfer  = sets["L_transfer"]
+    T           = sets["T"]
+    S_selected  = sets["S"][:scenario_size]
 
     print(f" - Disaster Areas: {len(I)}")
     print(f" - Candidate CCPs: {len(J)}")
     print(f" - Hospitals: {len(H)}")
     print("=" * 50 + "\n")
 
-    params = instance["deterministic_parameters"]
+    params      = instance["deterministic_parameters"]
     scenario_data = instance["scenario_data"]
-    cap_ij = instance["road_capacity"]["cap_ij"]
-    cap_jh = instance["road_capacity"]["cap_jh"]
-    cost_ij = instance["transport_cost"]["cost_ij"]
-    cost_jh = instance["transport_cost"]["cost_jh"]
+    cap_ij      = instance["road_capacity"]["cap_ij"]
+    cap_jh      = instance["road_capacity"]["cap_jh"]
+    cost_ij     = instance["transport_cost"]["cost_ij"]
+    cost_jh     = instance["transport_cost"]["cost_jh"]
 
-    model = gp.Model("SP_Model")
-    model.setParam("OutputFlag", 0)
-    model.setParam("TimeLimit", time_limit)
-    model.setParam("MIPGap", mip_gap)
+    # Normalize probabilities for the selected subset
+    raw_probs   = {s: scenario_data["probability"][s] for s in S_selected}
+    total_prob  = sum(raw_probs.values())
+    norm_probs  = {s: p / total_prob for s, p in raw_probs.items()}
+
+    # Wrap selected scenario data for model_core
+    rp_sd = {
+        "demand":                      {s: scenario_data["demand"][s]                      for s in S_selected},
+        "road_availability_ij":        {s: scenario_data["road_availability_ij"][s]        for s in S_selected},
+        "road_availability_jh":        {s: scenario_data["road_availability_jh"][s]        for s in S_selected},
+        "hospital_receiving_capacity": {s: scenario_data["hospital_receiving_capacity"][s] for s in S_selected},
+    }
+
+    # ------------------------------------------------------------------ #
+    # RP — SP extensive form                                               #
+    # ------------------------------------------------------------------ #
+    model, v = model_core.build_gurobi_model(
+        I, J, H, L, L_transfer, T, S_selected,
+        params, rp_sd, norm_probs,
+        cap_ij, cap_jh, cost_ij, cost_jh,
+        model_name="SP_RP_Model",
+        time_limit=time_limit,
+        mip_gap=mip_gap,
+    )
+    X, V, U, Y = v["X"], v["V"], v["U"], v["Y"]
+    FI, FO, RM, REG, TRT, WAT = (
+        v["FI"], v["FO"], v["RM"], v["REG"], v["TRT"], v["WAT"],
+    )
 
     class CallbackData:
         pass
-
     model._cb_data = CallbackData()
 
-    # First-stage variables.
-    X = model.addVars(J, vtype=GRB.BINARY, name="X")
-    V = model.addVars(J, vtype=GRB.INTEGER, lb=0, name="V")
-    U = model.addVars(J, vtype=GRB.INTEGER, lb=0, name="U")
-    Y = model.addVars(H, J, vtype=GRB.INTEGER, lb=0, name="Y")
-
-    # Scenario-dependent second-stage variables.
-    FI = model.addVars(S, I, J, L, T, vtype=GRB.CONTINUOUS, lb=0, name="FI")
-    FO = model.addVars(S, J, H, L_transfer, T, vtype=GRB.CONTINUOUS, lb=0, name="FO")
-    RM = model.addVars(S, I, L, T, vtype=GRB.CONTINUOUS, lb=0, name="RM")
-    REG = model.addVars(S, J, L, T, vtype=GRB.CONTINUOUS, lb=0, name="REG")
-    TRT = model.addVars(S, J, L, T, vtype=GRB.CONTINUOUS, lb=0, name="TRT")
-    WAT = model.addVars(S, J, L_transfer, T, vtype=GRB.CONTINUOUS, lb=0, name="WAT")
-
-    first_stage_cost = (
-        gp.quicksum(params["ccp_fixed_opening_cost"][j] * X[j] for j in J)
-        + params["staff_unit_assignment_cost"] * gp.quicksum(V[j] for j in J)
-        + params["ccp_ambulance_unit_assignment_cost"] * gp.quicksum(U[j] for j in J)
-        + gp.quicksum(
-            params["supply_allocation_cost_from_hospital_to_ccp"][h][j] * Y[h, j]
-            for h in H
-            for j in J
-        )
-    )
-
-    expected_second_stage_cost = 0
-    for s in S:
-        probability = scenario_data["probability"][s]
-        scenario_cost = (
-            gp.quicksum(
-                params["disaster_area_remaining_penalty_by_severity"][l] * RM[s, i, l, t]
-                for i in I
-                for l in L
-                for t in T
-            )
-            + gp.quicksum(
-                params["ccp_waiting_penalty_by_severity"][l] * WAT[s, j, l, t]
-                for j in J
-                for l in L_transfer
-                for t in T
-            )
-            + gp.quicksum(
-                cost_ij[i][j] * FI[s, i, j, l, t]
-                for i in I
-                for j in J
-                for l in L
-                for t in T
-            )
-            + gp.quicksum(
-                cost_jh[j][h] * FO[s, j, h, l, t]
-                for j in J
-                for h in H
-                for l in L_transfer
-                for t in T
-            )
-        )
-        expected_second_stage_cost += probability * scenario_cost
-
-    model.setObjective(first_stage_cost + expected_second_stage_cost, GRB.MINIMIZE)
-
-    model.addConstr(gp.quicksum(V[j] for j in J) <= params["total_available_staff"], "Total_Staff")
-    model.addConstr(
-        gp.quicksum(U[j] for j in J) <= params["total_available_ccp_ambulances"],
-        "Total_CCP_Ambulances",
-    )
-
-    for h in H:
-        model.addConstr(
-            gp.quicksum(Y[h, j] for j in J) <= params["hospital_supply_upper_bound"][h],
-            f"Hospital_Supply_{h}",
-        )
-
-    for j in J:
-        model.addConstr(V[j] <= params["ccp_staff_upper_bound"][j] * X[j], f"Logic_V_{j}")
-        model.addConstr(U[j] <= params["ccp_ambulance_upper_bound"][j] * X[j], f"Logic_U_{j}")
-        model.addConstr(
-            gp.quicksum(Y[h, j] for h in H) <= params["ccp_supply_upper_bound"][j] * X[j],
-            f"Logic_Y_{j}",
-        )
-
-    for s in S:
-        for t_idx, t in enumerate(T):
-            prev_t = T[t_idx - 1] if t_idx > 0 else None
-
-            for i in I:
-                for j in J:
-                    model.addConstr(
-                        gp.quicksum(FI[s, i, j, l, t] for l in L)
-                        <= cap_ij[i][j] * scenario_data["road_availability_ij"][s][i][j][t] * X[j],
-                        f"RoadCap_IJ_{s}_{i}_{j}_{t}",
-                    )
-
-            for j in J:
-                for h in H:
-                    model.addConstr(
-                        gp.quicksum(FO[s, j, h, l, t] for l in L_transfer)
-                        <= cap_jh[j][h] * scenario_data["road_availability_jh"][s][j][h][t] * X[j],
-                        f"RoadCap_JH_{s}_{j}_{h}_{t}",
-                    )
-
-            for j in J:
-                model.addConstr(
-                    gp.quicksum(FI[s, i, j, l, t] for i in I for l in L_transfer)
-                    <= params["ccp_ambulance_casualty_capacity"] * U[j],
-                    f"CCP_AmbCap_{s}_{j}_{t}",
-                )
-
-            for h in H:
-                model.addConstr(
-                    gp.quicksum(FO[s, j, h, l, t] for j in J for l in L_transfer)
-                    <= params["hospital_ambulance_casualty_capacity"]
-                    * params["hospital_ambulance_fleet"][h],
-                    f"Hosp_AmbCap_{s}_{h}_{t}",
-                )
-                model.addConstr(
-                    gp.quicksum(FO[s, j, h, l, t] for j in J for l in L_transfer)
-                    <= scenario_data["hospital_receiving_capacity"][s][h][t],
-                    f"Hosp_ReceiveCap_{s}_{h}_{t}",
-                )
-
-            for i in I:
-                for l in L:
-                    prev_rm = RM[s, i, l, prev_t] if prev_t else 0
-                    demand = scenario_data["demand"][s][t][i].get(l, 0)
-                    model.addConstr(
-                        RM[s, i, l, t]
-                        == prev_rm - gp.quicksum(FI[s, i, j, l, t] for j in J) + demand,
-                        f"Flow_RM_{s}_{i}_{l}_{t}",
-                    )
-
-            for j in J:
-                for l in L:
-                    model.addConstr(
-                        REG[s, j, l, t] == gp.quicksum(FI[s, i, j, l, t] for i in I),
-                        f"Flow_REG_{s}_{j}_{l}_{t}",
-                    )
-
-                    tau = int(params["treatment_duration_by_severity"][l])
-                    start_idx = max(0, t_idx - tau + 1)
-                    rolling_periods = T[start_idx : t_idx + 1]
-                    model.addConstr(
-                        TRT[s, j, l, t]
-                        == gp.quicksum(REG[s, j, l, rolling_t] for rolling_t in rolling_periods),
-                        f"Flow_TRT_{s}_{j}_{l}_{t}",
-                    )
-
-                for l in L_transfer:
-                    tau = int(params["treatment_duration_by_severity"][l])
-                    prev_wat = WAT[s, j, l, prev_t] if prev_t else 0
-                    completed = REG[s, j, l, T[t_idx - tau]] if (t_idx - tau) >= 0 else 0
-                    model.addConstr(
-                        WAT[s, j, l, t]
-                        == prev_wat
-                        + completed
-                        - gp.quicksum(FO[s, j, h, l, t] for h in H),
-                        f"Flow_WAT_{s}_{j}_{l}_{t}",
-                    )
-
-                for l in L_transfer:
-                    model.addConstr(
-                        TRT[s, j, l, t] + WAT[s, j, l, t]
-                        <= params["ccp_physical_capacity_by_severity"][l] * X[j],
-                        f"CCP_PhysicalCap_{s}_{j}_{l}_{t}",
-                    )
-
-                for l in [severity for severity in L if severity not in L_transfer]:
-                    model.addConstr(
-                        TRT[s, j, l, t] <= params["ccp_physical_capacity_by_severity"][l] * X[j],
-                        f"CCP_PhysicalCap_{s}_{j}_{l}_{t}",
-                    )
-
-                model.addConstr(
-                    gp.quicksum(
-                        TRT[s, j, l, t] / params["staff_treatment_rate_by_severity"][l] for l in L
-                    )
-                    <= V[j],
-                    f"StaffCap_{s}_{j}_{t}",
-                )
-
-        for j in J:
-            model.addConstr(
-                gp.quicksum(
-                    params["supply_consumption_by_severity"][l] * REG[s, j, l, t]
-                    for l in L
-                    for t in T
-                )
-                <= gp.quicksum(Y[h, j] for h in H),
-                f"SupplyCap_{s}_{j}",
-            )
-
-    print("Optimizing SP Model...\n")
+    print("Optimizing SP Model (RP)...\n")
     model.optimize(sp_callback)
 
     print("\n" + "=" * 50)
-    if model.status == GRB.OPTIMAL or model.status == GRB.TIME_LIMIT:
-        print("SP MODEL RESULT SUMMARY")
+    if (model.status == GRB.OPTIMAL or model.status == GRB.TIME_LIMIT) and model.SolCount > 0:
+        rp_best_ub = model.ObjVal
+        rp_best_lb = model.ObjBound
+        rp_gap     = model.MIPGap * 100
+
+        def safe_div(num, den):
+            return (num / den * 100) if den > 1e-6 else 0.0
+
+        total_demand = sum(
+            norm_probs[s] * scenario_data["demand"][s][t][i].get(l, 0)
+            for s in S_selected for t in T for i in I for l in L
+        )
+        tot_FI = sum(
+            norm_probs[s] * FI[s, i, j, l, t].X
+            for s in S_selected for i in I for j in J for l in L for t in T
+        )
+        tot_FO = sum(
+            norm_probs[s] * FO[s, j, h, l, t].X
+            for s in S_selected for j in J for h in H for l in L_transfer for t in T
+        )
+        tot_RM = sum(
+            norm_probs[s] * RM[s, i, l, t].X
+            for s in S_selected for i in I for l in L for t in T
+        )
+        tot_WAT = sum(
+            norm_probs[s] * WAT[s, j, l, t].X
+            for s in S_selected for j in J for l in L_transfer for t in T
+        )
+
+        max_ccp_util = 0.0
+        for s in S_selected:
+            for j in J:
+                for l in L:
+                    cap = params["ccp_physical_capacity_by_severity"][l] * X[j].X
+                    for t in T:
+                        used = TRT[s, j, l, t].X + (WAT[s, j, l, t].X if l in L_transfer else 0)
+                        max_ccp_util = max(max_ccp_util, safe_div(used, cap))
+
+        max_hosp_util = 0.0
+        for s in S_selected:
+            for h in H:
+                for t in T:
+                    cap  = scenario_data["hospital_receiving_capacity"][s][h][t]
+                    used = sum(FO[s, j, h, l, t].X for j in J for l in L_transfer)
+                    max_hosp_util = max(max_hosp_util, safe_div(used, cap))
+
+        max_road_ij_util = 0.0
+        for s in S_selected:
+            for i in I:
+                for j in J:
+                    for t in T:
+                        cap  = cap_ij[i][j] * scenario_data["road_availability_ij"][s][i][j][t] * X[j].X
+                        used = sum(FI[s, i, j, l, t].X for l in L)
+                        max_road_ij_util = max(max_road_ij_util, safe_div(used, cap))
+
+        max_road_jh_util = 0.0
+        for s in S_selected:
+            for j in J:
+                for h in H:
+                    for t in T:
+                        cap  = cap_jh[j][h] * scenario_data["road_availability_jh"][s][j][h][t] * X[j].X
+                        used = sum(FO[s, j, h, l, t].X for l in L_transfer)
+                        max_road_jh_util = max(max_road_jh_util, safe_div(used, cap))
+
+        max_staff_util = 0.0
+        for s in S_selected:
+            for j in J:
+                cap = V[j].X
+                for t in T:
+                    used = sum(
+                        TRT[s, j, l, t].X / params["staff_treatment_rate_by_severity"][l]
+                        for l in L
+                    )
+                    max_staff_util = max(max_staff_util, safe_div(used, cap))
+
+        max_ccp_amb_util = 0.0
+        for s in S_selected:
+            for j in J:
+                cap = params["ccp_ambulance_casualty_capacity"] * U[j].X
+                for t in T:
+                    used = sum(FI[s, i, j, l, t].X for i in I for l in L_transfer)
+                    max_ccp_amb_util = max(max_ccp_amb_util, safe_div(used, cap))
+
+        max_hosp_amb_util = 0.0
+        for s in S_selected:
+            for h in H:
+                cap = params["hospital_ambulance_casualty_capacity"] * params["hospital_ambulance_fleet"][h]
+                for t in T:
+                    used = sum(FO[s, j, h, l, t].X for j in J for l in L_transfer)
+                    max_hosp_amb_util = max(max_hosp_amb_util, safe_div(used, cap))
+
+        print("SP MODEL (RP) RESULT SUMMARY")
         print("-" * 50)
-        print(f" - Best UB (Objective): {model.ObjVal:.2f}")
-        print(f" - Best LB (Bound):     {model.ObjBound:.2f}")
-        print(f" - Final Gap:           {model.MIPGap * 100:.4f}%")
+        print(f" - Best UB (Objective): {rp_best_ub:.2f}")
+        print(f" - Best LB (Bound):     {rp_best_lb:.2f}")
+        print(f" - Final Gap:           {rp_gap:.4f}%")
         print(f" - CPU Time:            {model.Runtime:.2f} s")
+        print(f" - Nodes:               {model.NodeCount:.0f}")
+        print(f" - Iteration:           {model.IterCount:.0f} (Simplex iterations)")
+        print(f" - num_vars:            {model.NumVars:d}")
+        print(f" - num_constrs:         {model.NumConstrs:d}")
         print("-" * 50)
         print(" - First-stage decisions (Here and Now):")
         for j in J:
             if X[j].X > 0.5:
                 print(f"   CCP {j:4s} -> X: 1, Staff(V): {V[j].X:2.0f}, Amb(U): {U[j].X:2.0f}")
+        print("-" * 50)
+        print(" - Expected KPIs (probability-weighted across scenarios):")
+        print(" - total_demand:                  {:.2f}".format(total_demand))
+        print(" - total_transported_to_ccp (FI): {:.2f}".format(tot_FI))
+        print(" - total_transferred_to_hospital (FO): {:.2f}".format(tot_FO))
+        print(" - total_remaining_disaster_area (RM): {:.2f} (all periods summed)".format(tot_RM))
+        print(" - total_waiting_at_ccp (WAT):         {:.2f} (all periods summed)".format(tot_WAT))
+        print("-" * 50)
+        print(" - max_ccp_utilization_%:                {:6.2f} %".format(max_ccp_util))
+        print(" - max_hospital_utilization_%:           {:6.2f} %".format(max_hosp_util))
+        print(" - max_road_ij_utilization_%:            {:6.2f} %".format(max_road_ij_util))
+        print(" - max_road_jh_utilization_%:            {:6.2f} %".format(max_road_jh_util))
+        print(" - max_staff_utilization_%:              {:6.2f} %".format(max_staff_util))
+        print(" - max_ccp_ambulance_utilization_%:      {:6.2f} %".format(max_ccp_amb_util))
+        print(" - max_hospital_ambulance_utilization_%: {:6.2f} %".format(max_hosp_amb_util))
         print("=" * 50)
-        return model
+
+        # ---------------------------------------------------------------- #
+        # VSS / EVPI                                                        #
+        # ---------------------------------------------------------------- #
+        summary = vss_evpi.compute_vss_evpi(
+            instance     = instance,
+            S_selected   = S_selected,
+            rp_best_lb   = rp_best_lb,
+            rp_best_ub   = rp_best_ub,
+            rp_gap       = rp_gap,
+            time_limit   = time_limit,
+            mip_gap      = mip_gap,
+        )
+        vss_evpi.print_vss_evpi_summary(summary)
+        return model, summary
 
     if model.status == GRB.INFEASIBLE:
         print("MODEL IS INFEASIBLE.")
-        return None
+        return None, None
 
     print(f"Optimization ended with status {model.status}")
-    return None
+    return None, None
 
 
 if __name__ == "__main__":

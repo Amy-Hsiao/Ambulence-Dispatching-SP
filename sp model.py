@@ -27,7 +27,7 @@ def sp_callback(model, where):
         found_new_best = obj_bst < model._cb_data.best_ub
         time_elapsed = current_time - model._cb_data.last_print_time
 
-        if found_new_best or time_elapsed >= 10.0:
+        if found_new_best or time_elapsed >= config.SP_PROGRESS_INTERVAL_SEC:
             runtime = model.cbGet(GRB.Callback.RUNTIME)
             print(
                 f"[Time: {runtime:.1f}s] Best LB: {obj_bnd:12.2f} | "
@@ -38,8 +38,13 @@ def sp_callback(model, where):
                 model._cb_data.best_ub = obj_bst
 
 
-def run_sp_model(scenario_size=5, network_scale="Small", time_limit=3600, mip_gap=0.01):
-    instance = config.generate_data()
+def run_sp_model(scenario_size=None, sample_ratio=None, time_limit=None, mip_gap=None):
+    scenario_size = config.SP_SCENARIO_SIZE if scenario_size is None else scenario_size
+    sample_ratio = config.SP_SAMPLE_RATIO if sample_ratio is None else sample_ratio
+    time_limit = config.SP_TIME_LIMIT if time_limit is None else time_limit
+    mip_gap = config.SP_MIP_GAP if mip_gap is None else mip_gap
+
+    instance = config.generate_data(sample_ratio=sample_ratio)
     sets = instance["sets"]
     I           = sets["I"]
     J           = sets["J"]
@@ -47,7 +52,7 @@ def run_sp_model(scenario_size=5, network_scale="Small", time_limit=3600, mip_ga
     L           = sets["L"]
     L_transfer  = sets["L_transfer"]
     T           = sets["T"]
-    S_selected  = sets["S"][:scenario_size]
+    S_selected  = sets["S"] if scenario_size is None else sets["S"][:scenario_size]
 
     params      = instance["deterministic_parameters"]
     scenario_data = instance["scenario_data"]
@@ -248,4 +253,4 @@ def run_sp_model(scenario_size=5, network_scale="Small", time_limit=3600, mip_ga
 
 
 if __name__ == "__main__":
-    run_sp_model(scenario_size=5, network_scale="Small", time_limit=3600, mip_gap=0.01)
+    run_sp_model()

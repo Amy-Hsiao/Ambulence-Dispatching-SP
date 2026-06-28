@@ -16,7 +16,7 @@ CCP_CSV = "ccp_Taipei.csv"
 HOSPITAL_CSV = "hospital_Taipei.csv"
 
 MASTER_SEED = 42
-SCENARIOS = 5
+SCENARIOS = 20
 TIME_PERIODS = 8
 COORDINATE_SYSTEM = "euclidean_m"
 DEMAND_MULTIPLIER = 1.0
@@ -24,22 +24,33 @@ ROAD_CAPACITY_MULTIPLIER = 1.0
 HOSPITAL_CAPACITY_MULTIPLIER = 1.0
 SAMPLE_RATIO = 0.25   # 0 < ratio <= 1.0; < 1.0 時按比例抽樣做 Stress Test
 
+# SP model run settings
+SP_SCENARIO_SIZE = None
+SP_SAMPLE_RATIO = SAMPLE_RATIO
+SP_TIME_LIMIT = 3600.0
+SP_MIP_GAP = 0.01
+SP_PROGRESS_INTERVAL_SEC = 10.0
+
+# VSS/EVPI WS subproblem solver settings
+VSS_EVPI_WS_TIME_LIMIT = 1200.0
+VSS_EVPI_WS_MIP_GAP = 0.0001
+
 # 時間假設檢驗參數 (一期 30 分鐘 = 1800 秒)
 PERIOD_DURATION_SEC = 1800.0
 ASSUMED_SPEED_MPS = 11.11  # 預設緊急車輛時速 40 km/h 換算為公尺/秒
 
 PARAMETERS = {
-    "ccp_fixed_opening_cost": 3000000.0,
+    "ccp_fixed_opening_cost": 1500000.0,
     "staff_unit_assignment_cost": 10000.0,
     "ccp_ambulance_unit_assignment_cost": 8000.0,
     "supply_allocation_cost_unit": 1800.0,
-    "total_available_staff": 275.0,
-    "total_available_ccp_ambulances": 109.0,
+    "total_available_staff": 550.0,
+    "total_available_ccp_ambulances": 220.0,
     "hospital_supply_upper_bound": 1000.0,
-    "ccp_staff_upper_bound": 52.0,
-    "ccp_ambulance_upper_bound": 9.0,
+    "ccp_staff_upper_bound": 104.0,
+    "ccp_ambulance_upper_bound": 18.0,
     "ccp_supply_upper_bound": 860.0,
-    "hospital_ambulance_fleet": 9.0,
+    "hospital_ambulance_fleet": 18.0,
     "ccp_ambulance_casualty_capacity": 2.0,
     "hospital_ambulance_casualty_capacity": 2.0,
     "ccp_physical_capacity_by_severity": {
@@ -424,8 +435,9 @@ def generate_data(sample_ratio: float = SAMPLE_RATIO) -> dict[str, Any]:
     # --- 距離矩陣與衍生參數（僅含抽樣 ID）---
     distance_ij_m = _matrix(disaster_records, ccp_records,      COORDINATE_SYSTEM)
     distance_jh_m = _matrix(ccp_records,      hospital_records, COORDINATE_SYSTEM)
-    cap_ij  = _scale_matrix(distance_ij_m, 0.24)
-    cap_jh  = _scale_matrix(distance_jh_m, 0.15)
+    # 固定容量：500 輛/期 × 救護車占比 × 每輛載人數，與距離無關
+    cap_ij  = {i: {j: 80.0 for j in ccp_ids}      for i in disaster_ids}
+    cap_jh  = {j: {h: 80.0 for h in hospital_ids} for j in ccp_ids}
     cost_ij = _transport_cost(distance_ij_m)
     cost_jh = _transport_cost(distance_jh_m)
 

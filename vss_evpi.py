@@ -20,6 +20,7 @@ from typing import Any
 import gurobipy as gp
 from gurobipy import GRB
 
+import config
 import model_core
 
 
@@ -46,7 +47,7 @@ def _make_callback():
         else:
             gap = float("inf")
         found_new = obj_bst < state.best_ub
-        if found_new or (now - state.last_print) >= 10.0:
+        if found_new or (now - state.last_print) >= config.SP_PROGRESS_INTERVAL_SEC:
             rt = model.cbGet(GRB.Callback.RUNTIME)
             print(
                 f"  [Time: {rt:.1f}s] LB: {obj_bnd:12.2f} | "
@@ -111,8 +112,8 @@ def compute_vss_evpi(
     rp_best_lb: float,
     rp_best_ub: float,
     rp_gap: float,
-    time_limit: float = 3600.0,
-    mip_gap: float = 0.01,
+    time_limit: float | None = None,
+    mip_gap: float | None = None,
 ) -> dict[str, Any]:
     """Compute EV, EEV, WS and derive VSS / EVPI.
 
@@ -123,6 +124,11 @@ def compute_vss_evpi(
     rp_best_lb/ub : already-solved RP bounds (BestBound / ObjVal)
     rp_gap        : RP MIPGap * 100
     """
+    time_limit = config.SP_TIME_LIMIT if time_limit is None else time_limit
+    mip_gap = config.SP_MIP_GAP if mip_gap is None else mip_gap
+    ws_time_limit = config.VSS_EVPI_WS_TIME_LIMIT
+    ws_mip_gap = config.VSS_EVPI_WS_MIP_GAP
+
     sets    = instance["sets"]
     I       = sets["I"]
     J       = sets["J"]
@@ -225,7 +231,7 @@ def compute_vss_evpi(
             f"WS[{s}]", I, J, H, L, L_tr, T, ws_S,
             params, ws_sd, ws_probs,
             cap_ij, cap_jh, cost_ij, cost_jh,
-            time_limit, mip_gap,
+            ws_time_limit, ws_mip_gap,
         )
 
         ws_scenario_results[s] = {

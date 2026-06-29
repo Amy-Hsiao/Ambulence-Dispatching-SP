@@ -2,6 +2,7 @@ import gurobipy as gp
 from gurobipy import GRB
 
 import config
+import logging_utils
 import model_core
 
 
@@ -24,13 +25,38 @@ def custom_callback(model, where):
 
 
 def solve_deterministic_model():
+    sample_ratio = config.SAMPLE_RATIO
+    time_limit = 3600.0
+    mip_gap = 0.01
+    log_path = logging_utils.build_det_log_path(sample_ratio, time_limit, mip_gap)
+    with logging_utils.tee_output(log_path):
+        return _solve_deterministic_model(sample_ratio, time_limit, mip_gap)
+
+
+def _solve_deterministic_model(sample_ratio, time_limit, mip_gap):
     print("正在生成資料與載入 Config...")
-    instance = config.generate_data()
+    instance = config.generate_data(sample_ratio=sample_ratio)
 
     sets = instance["sets"]
     I, J, H, L, L_Amb, T = (
         sets["I"], sets["J"], sets["H"],
         sets["L"], sets["L_transfer"], sets["T"],
+    )
+
+    logging_utils.print_run_metadata(
+        "DET",
+        instance,
+        (
+            ("scenario_size_used", 1),
+            ("scenario_size_request", "B00"),
+            ("time_limit", time_limit),
+            ("mip_gap", mip_gap),
+        ),
+        multipliers_override={
+            "demand_multiplier": 1.0,
+            "road_capacity_multiplier": 1.0,
+            "hospital_capacity_multiplier": 1.0,
+        },
     )
 
     params   = instance["deterministic_parameters"]
@@ -51,6 +77,8 @@ def solve_deterministic_model():
         params, sd, probs,
         cap_ij, cap_jh, cost_ij, cost_jh,
         model_name="Deterministic_Baseline_Model",
+        time_limit=time_limit,
+        mip_gap=mip_gap,
     )
     X, V, U, Y = v["X"], v["V"], v["U"], v["Y"]
     FI, FO, RM, REG, TRT, WAT = (
@@ -164,7 +192,11 @@ def solve_deterministic_model():
     print("- 第一階決策變數 (X, V, U):")
     for j in J:
         if X[j].X > 0.5:
-            print(f"  CCP {j:4s} -> X: 1, Staff(V): {V[j].X:2.0f}, Amb(U): {U[j].X:2.0f}")
+            supply = sum(Y[h, j].X for h in H)
+            print(
+                f"  CCP {j:4s} -> X: 1, Staff(V): {V[j].X:2.0f}, "
+                f"Amb(U): {U[j].X:2.0f}, MedicalSupply(Y): {supply:.2f}"
+            )
     print("\n- 第一階決策變數 (Y - 醫療物資分配):")
     for h in H:
         for j in J:

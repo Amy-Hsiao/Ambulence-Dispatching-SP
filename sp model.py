@@ -4,6 +4,7 @@ import gurobipy as gp
 from gurobipy import GRB
 
 import config
+import logging_utils
 import model_core
 import vss_evpi
 
@@ -44,6 +45,12 @@ def run_sp_model(scenario_size=None, sample_ratio=None, time_limit=None, mip_gap
     time_limit = config.SP_TIME_LIMIT if time_limit is None else time_limit
     mip_gap = config.SP_MIP_GAP if mip_gap is None else mip_gap
 
+    log_path = logging_utils.build_sp_log_path(scenario_size, sample_ratio, time_limit, mip_gap)
+    with logging_utils.tee_output(log_path):
+        return _run_sp_model(scenario_size, sample_ratio, time_limit, mip_gap)
+
+
+def _run_sp_model(scenario_size, sample_ratio, time_limit, mip_gap):
     instance = config.generate_data(sample_ratio=sample_ratio)
     sets = instance["sets"]
     I           = sets["I"]
@@ -53,6 +60,17 @@ def run_sp_model(scenario_size=None, sample_ratio=None, time_limit=None, mip_gap
     L_transfer  = sets["L_transfer"]
     T           = sets["T"]
     S_selected  = sets["S"] if scenario_size is None else sets["S"][:scenario_size]
+
+    logging_utils.print_run_metadata(
+        "SP",
+        instance,
+        (
+            ("scenario_size_used", len(S_selected)),
+            ("scenario_size_request", "ALL" if scenario_size is None else scenario_size),
+            ("time_limit", time_limit),
+            ("mip_gap", mip_gap),
+        ),
+    )
 
     params      = instance["deterministic_parameters"]
     scenario_data = instance["scenario_data"]
@@ -225,7 +243,11 @@ def run_sp_model(scenario_size=None, sample_ratio=None, time_limit=None, mip_gap
         print(" - First-stage decisions (Here and Now):")
         for j in J:
             if X[j].X > 0.5:
-                print(f"   CCP {j:4s} -> X: 1, Staff(V): {V[j].X:2.0f}, Amb(U): {U[j].X:2.0f}")
+                supply = sum(Y[h, j].X for h in H)
+                print(
+                    f"   CCP {j:4s} -> X: 1, Staff(V): {V[j].X:2.0f}, "
+                    f"Amb(U): {U[j].X:2.0f}, MedicalSupply(Y): {supply:.2f}"
+                )
         print("-" * 50)
         print(" - Expected KPIs (probability-weighted across scenarios):")
         print(" - total_demand:                  {:.2f}".format(total_demand))

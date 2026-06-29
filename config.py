@@ -16,7 +16,7 @@ CCP_CSV = "ccp_Taipei.csv"
 HOSPITAL_CSV = "hospital_Taipei.csv"
 
 MASTER_SEED = 42
-SCENARIOS = 20
+SCENARIOS = 5
 TIME_PERIODS = 8
 COORDINATE_SYSTEM = "euclidean_m"
 DEMAND_MULTIPLIER = 1.0
@@ -400,34 +400,30 @@ def generate_data(sample_ratio: float = SAMPLE_RATIO) -> dict[str, Any]:
     full_n_hospital = len(all_hospital_records)
 
     # --- 按比例抽樣（向上取整，最少 1）---
+    # CCP 候選點永遠使用全部，不隨 sample_ratio 縮減
+    # （選址決策空間需保持完整；只對災區與醫院按比例抽樣）
+    ccp_records = all_ccp_records
+
     if sample_ratio < 1.0:
         sampling_rng = random.Random(MASTER_SEED)
         n_disaster = max(1, math.ceil(full_n_disaster * sample_ratio))
-        n_ccp      = max(1, math.ceil(full_n_ccp      * sample_ratio))
         n_hospital = max(1, math.ceil(full_n_hospital  * sample_ratio))
         sampled_disaster = sampling_rng.sample(all_disaster_records, n_disaster)
-        sampled_ccp      = sampling_rng.sample(all_ccp_records,      n_ccp)
         sampled_hospital = sampling_rng.sample(all_hospital_records,  n_hospital)
         # 保留原始載入順序，避免索引不穩定
         disaster_id_set  = {r.id for r in sampled_disaster}
-        ccp_id_set       = {r.id for r in sampled_ccp}
         hospital_id_set  = {r.id for r in sampled_hospital}
         disaster_records = [r for r in all_disaster_records if r.id in disaster_id_set]
-        ccp_records      = [r for r in all_ccp_records      if r.id in ccp_id_set]
         hospital_records = [r for r in all_hospital_records  if r.id in hospital_id_set]
     else:
         disaster_records = all_disaster_records
-        ccp_records      = all_ccp_records
         hospital_records = all_hospital_records
 
     disaster_ids = [record.id for record in disaster_records]
     ccp_ids      = [record.id for record in ccp_records]
     hospital_ids = [record.id for record in hospital_records]
 
-    # --- 依實際 CCP 數量等比例縮放總資源（向上取整）---
-    j_actual = len(ccp_ids)
-    scaled_total_staff      = math.ceil(PARAMETERS["total_available_staff"]          * j_actual / full_n_ccp)
-    scaled_total_ambulances = math.ceil(PARAMETERS["total_available_ccp_ambulances"] * j_actual / full_n_ccp)
+    # J 永遠使用全部候選點，總資源直接沿用 PARAMETERS 設定值（不縮放）
 
     scenario_ids = [f"S{idx + 1:03d}" for idx in range(SCENARIOS)]
     period_ids   = [f"T{idx + 1:03d}" for idx in range(TIME_PERIODS)]
@@ -443,9 +439,6 @@ def generate_data(sample_ratio: float = SAMPLE_RATIO) -> dict[str, Any]:
 
     # --- 確定性參數（覆寫總資源數量）---
     deterministic_parameters = _build_deterministic_parameters(ccp_ids, hospital_ids)
-    deterministic_parameters["total_available_staff"]          = float(scaled_total_staff)
-    deterministic_parameters["total_available_ccp_ambulances"] = float(scaled_total_ambulances)
-
     scenario_data, seed_audit = generate_scenarios(disaster_ids, ccp_ids, hospital_ids)
 
     baseline_scenario_data, baseline_seed_audit = generate_scenarios(

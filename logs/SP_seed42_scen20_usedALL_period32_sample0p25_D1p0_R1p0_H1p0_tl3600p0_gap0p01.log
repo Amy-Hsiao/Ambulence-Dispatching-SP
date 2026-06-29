@@ -1,0 +1,71 @@
+Log file: logs\SP_seed42_scen20_usedALL_period32_sample0p25_D1p0_R1p0_H1p0_tl3600p0_gap0p01.log
+==================================================
+RUN METADATA
+==================================================
+- model_type: SP
+- scenario_size_used: 20
+- scenario_size_request: ALL
+- time_limit: 3600.0
+- mip_gap: 0.01
+- master_seed: 42
+- num_scenarios_config: 20
+- num_periods: 32
+- sample_ratio: 0.25
+- sampled_disaster_areas: 58
+- sampled_ccps: 4
+- sampled_hospitals: 5
+- demand_multiplier: 1.0
+- road_capacity_multiplier: 1.0
+- hospital_capacity_multiplier: 1.0
+==================================================
+Set parameter Username
+Set parameter LicenseID to value 2782025
+Academic license - for non-commercial use only - expires 2027-02-23
+==================================================
+
+Optimizing SP Model (RP)...
+
+[Time: 5.0s] Best LB: -370400975.05 | Best UB: 1610484659.21 | Gap: 123.00%
+[Time: 28.7s] Best LB: 166676212.56 | Best UB: 1610484659.21 | Gap:  89.65%
+
+==================================================
+SP MODEL (RP) RESULT SUMMARY
+ 
+ - Disaster Areas: 58
+ - Candidate CCPs: 4
+ - Hospitals: 5
+ - Scenarios: 20
+ - Time Period: 32
+ - Objective Value:     166722852.48
+ - CPU Time:            29.66 s
+ - num_vars:            602912
+ - num_constrs:         312419
+ - Nodes:               1
+ - Iteration:           9602 (Simplex iterations)
+ - Best UB (Objective): 166722852.48
+ - Best LB (Bound):     166676212.56
+ - Final Gap:           0.0280%
+ - VSS(%)    = 0.0596 %
+ - EVPI(%)   = 0.0335 %
+--------------------------------------------------
+ - First-stage decisions (Here and Now):
+   CCP 9    -> X: 1, Staff(V): 14, Amb(U):  6, MedicalSupply(Y): 860.00
+   CCP 10   -> X: 1, Staff(V): 17, Amb(U):  7, MedicalSupply(Y): 860.00
+   CCP 13   -> X: 1, Staff(V): 22, Amb(U):  7, MedicalSupply(Y): 860.00
+   CCP 15   -> X: 1, Staff(V): 20, Amb(U):  9, MedicalSupply(Y): 860.00
+--------------------------------------------------
+ - Expected KPIs (probability-weighted across scenarios):
+ - total_demand:                  3714.63
+ - total_transported_to_ccp (FI): 1529.74
+ - total_transferred_to_hospital (FO): 1050.89
+ - total_remaining_disaster_area (RM): 28474.34 (all periods summed)
+ - total_waiting_at_ccp (WAT):         1598.51 (all periods summed)
+--------------------------------------------------
+ - max_ccp_utilization_%:                100.00 %
+ - max_hospital_utilization_%:           100.00 %
+ - max_road_ij_utilization_%:            100.00 %
+ - max_road_jh_utilization_%:            100.00 %
+ - max_staff_utilization_%:               98.90 %
+ - max_ccp_ambulance_utilization_%:       94.94 %
+ - max_hospital_ambulance_utilization_%: 100.00 %
+==================================================

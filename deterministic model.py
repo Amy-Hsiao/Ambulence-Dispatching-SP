@@ -48,7 +48,6 @@ def _solve_deterministic_model(sample_ratio, time_limit, mip_gap):
         instance,
         (
             ("scenario_size_used", 1),
-            ("scenario_size_request", "B00"),
             ("time_limit", time_limit),
             ("mip_gap", mip_gap),
         ),

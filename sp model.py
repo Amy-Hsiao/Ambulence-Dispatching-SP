@@ -66,7 +66,6 @@ def _run_sp_model(scenario_size, sample_ratio, time_limit, mip_gap):
         instance,
         (
             ("scenario_size_used", len(S_selected)),
-            ("scenario_size_request", "ALL" if scenario_size is None else scenario_size),
             ("time_limit", time_limit),
             ("mip_gap", mip_gap),
         ),

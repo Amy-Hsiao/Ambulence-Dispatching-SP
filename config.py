@@ -22,7 +22,8 @@ COORDINATE_SYSTEM = "euclidean_m"
 DEMAND_MULTIPLIER = 1.0
 ROAD_CAPACITY_MULTIPLIER = 1.0
 HOSPITAL_CAPACITY_MULTIPLIER = 1.0
-SAMPLE_RATIO = 0.25   # 0 < ratio <= 1.0; < 1.0 時按比例抽樣做 Stress Test
+SAMPLE_RATIO = 0.3   # 0 < ratio <= 1.0; < 1.0 時按比例抽樣做 Stress Test
+CCP_SAMPLE_SIZE = 8  # None = 全部 CCP；正整數 = 固定抽取 N 個 CCP 候選點
 
 # SP model run settings
 SP_SCENARIO_SIZE = None
@@ -386,9 +387,14 @@ def validate_instance(instance: dict[str, Any]) -> None:
 # ==========================================
 # 主生成函數
 # ==========================================
-def generate_data(sample_ratio: float = SAMPLE_RATIO) -> dict[str, Any]:
+def generate_data(
+    sample_ratio: float = SAMPLE_RATIO,
+    ccp_sample_size: int | None = CCP_SAMPLE_SIZE,
+) -> dict[str, Any]:
     if not (0 < sample_ratio <= 1.0):
         raise ValueError(f"sample_ratio must be in (0, 1.0], got {sample_ratio}")
+    if ccp_sample_size is not None and (not isinstance(ccp_sample_size, int) or ccp_sample_size < 1):
+        raise ValueError(f"ccp_sample_size must be a positive int or None, got {ccp_sample_size}")
 
     # --- 載入完整資料 ---
     all_disaster_records = read_coordinate_csv(DATA_DIR / DISASTER_CSV)
@@ -399,11 +405,21 @@ def generate_data(sample_ratio: float = SAMPLE_RATIO) -> dict[str, Any]:
     full_n_ccp      = len(all_ccp_records)
     full_n_hospital = len(all_hospital_records)
 
-    # --- 按比例抽樣（向上取整，最少 1）---
-    # CCP 候選點永遠使用全部，不隨 sample_ratio 縮減
-    # （選址決策空間需保持完整；只對災區與醫院按比例抽樣）
-    ccp_records = all_ccp_records
+    # --- CCP 候選點：可客製化數量，None 或超過全數時使用全部 ---
+    _n_ccp = (
+        min(ccp_sample_size, full_n_ccp)
+        if ccp_sample_size is not None
+        else full_n_ccp
+    )
+    if _n_ccp < full_n_ccp:
+        ccp_rng     = random.Random(stable_seed(MASTER_SEED, "ccp_selection", _n_ccp))
+        sampled_ccp = ccp_rng.sample(all_ccp_records, _n_ccp)
+        ccp_id_set  = {r.id for r in sampled_ccp}
+        ccp_records = [r for r in all_ccp_records if r.id in ccp_id_set]
+    else:
+        ccp_records = all_ccp_records
 
+    # --- 災區與醫院按比例抽樣（向上取整，最少 1）---
     if sample_ratio < 1.0:
         sampling_rng = random.Random(MASTER_SEED)
         n_disaster = max(1, math.ceil(full_n_disaster * sample_ratio))
@@ -484,6 +500,7 @@ def generate_data(sample_ratio: float = SAMPLE_RATIO) -> dict[str, Any]:
                 "hospital_capacity_multiplier": HOSPITAL_CAPACITY_MULTIPLIER,
             },
             "sample_ratio": sample_ratio,
+            "ccp_sample_size": ccp_sample_size,
             "sampled_counts": {
                 "disaster_areas": len(disaster_ids),
                 "ccps": len(ccp_ids),

@@ -1,178 +1,512 @@
 #!/usr/bin/env python3
 """
-stress_test_J16.py
-==================
-Stress Test：J=16 固定（全部 CCP 候選點），只縮放 I 和 H
-  S = 5    (固定)
-  T = 8    (固定)
-  sample_ratio: 10% → 25% → 50% → 75% → 100%
+Batch SP experiment runner.
 
-早停條件：某一個規模的最終 Gap > 10%，後續更大的規模不再執行。
-每跑完一個規模立即寫入 CSV，確保中途中斷也不會遺失結果。
+This script is only a runner. It temporarily changes values in the imported
+config module while it runs each experiment case, then restores them. It does
+not rewrite config.py and does not change the model core logic.
 """
 
+from __future__ import annotations
+
 import csv
-import datetime
+import datetime as dt
+import importlib.util
 import math
 import os
+import re
 import sys
 import time
+from contextlib import contextmanager
+from pathlib import Path
+from typing import Any
 
-# ── 確保從腳本所在目錄執行 ───────────────────────────────────
-os.chdir(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, ".")
 
-# ── 實驗固定參數 ─────────────────────────────────────────────
-TARGET_SCENARIOS  = 5
-TARGET_PERIODS    = 8
-SAMPLE_RATIOS     = [0.10, 0.25, 0.50, 0.75, 1.00]
-GAP_STOP_PCT      = 10.0    # Gap 超過這個值就停
-TIME_LIMIT        = 3600.0  # 每個規模最多 1 小時
-MIP_GAP           = 0.01    # Gurobi 收斂門檻 1%
+# =============================================================================
+# Parameter setting area
+# =============================================================================
+# Choose exactly one experiment axis:
+#   "scenario"                     -> run different scenario counts, e.g. [5, 10, 20]
+#   "ccp"                          -> run different CCP counts, e.g. [6, 8, 10]
+#   "sample_ratio"                 -> run different I/H sample ratios, e.g. [0.1, 0.25, 0.5, 1.0]
+#   "time_period"                  -> run different time periods, e.g. [4, 8, 12, 16]
+#   "demand_multiplier"            -> run different demand multipliers, e.g. [1.0, 1.2, 1.5]
+#   "road_capacity_multiplier"     -> run different road capacity multipliers, e.g. [0.8, 1.0, 1.2]
+#   "hospital_capacity_multiplier" -> run different hospital capacity multipliers, e.g. [0.8, 1.0, 1.2]
+EXPERIMENT_AXIS = "scenario"
+EXPERIMENT_VALUES = [5, 10, 20]
 
-# ── import config 並驗證設定 ─────────────────────────────────
-import config as cfg
+# Fixed base settings. The chosen EXPERIMENT_AXIS overrides one of these values
+# for each case; all other values stay fixed.
+BASE_SCENARIOS = 5
+BASE_CCP_SAMPLE_SIZE = 8       # None = use all CCPs; positive int = sample N CCPs
+BASE_SAMPLE_RATIO = 0.25       # 0 < ratio <= 1.0; samples disaster areas and hospitals
+BASE_TIME_PERIODS = 8
+BASE_DEMAND_MULTIPLIER = 1.0
+BASE_ROAD_CAPACITY_MULTIPLIER = 1.0
+BASE_HOSPITAL_CAPACITY_MULTIPLIER = 1.0
 
-if cfg.SCENARIOS != TARGET_SCENARIOS:
-    print(f"[WARNING] config.SCENARIOS={cfg.SCENARIOS}，本腳本需要 {TARGET_SCENARIOS}，已強制覆寫。")
-    cfg.SCENARIOS = TARGET_SCENARIOS
+# Solver and early-stop settings.
+TIME_LIMIT = 3600.0
+MIP_GAP = 0.01
+GAP_STOP_PCT = 10.0
+CPU_STOP_SEC = 10000.0
 
-if cfg.TIME_PERIODS != TARGET_PERIODS:
-    print(f"[WARNING] config.TIME_PERIODS={cfg.TIME_PERIODS}，本腳本需要 {TARGET_PERIODS}，已強制覆寫。")
-    cfg.TIME_PERIODS = TARGET_PERIODS
+# Output settings.
+RESULT_PREFIX = "stress_test_batch"
+STOP_ON_ERROR = True
 
-import sp_model as sp
 
-# ── 取得全集合大小 ───────────────────────────────────────────
-def _csv_row_count(filepath):
-    with open(filepath, encoding="utf-8-sig", newline="") as f:
-        return sum(1 for _ in f) - 1  # 扣掉 header
+ROOT_DIR = Path(__file__).resolve().parent
+LOG_DIR = ROOT_DIR / "logs"
+SP_MODEL_PATH = ROOT_DIR / "sp model.py"
 
-full_I = _csv_row_count(f"data/{cfg.DISASTER_CSV}")
-full_H = _csv_row_count(f"data/{cfg.HOSPITAL_CSV}")
-full_J = _csv_row_count(f"data/{cfg.CCP_CSV}")   # 固定，不抽樣
+os.chdir(ROOT_DIR)
 
-# ── 輸出 CSV 路徑 ────────────────────────────────────────────
-timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-csv_path  = f"stress_test_J16_{timestamp}.csv"
+if str(ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(ROOT_DIR))
+
+import config as cfg  # noqa: E402
+
+
 FIELDNAMES = [
-    "test_id", "sample_ratio_pct",
-    "I", "J", "H", "S", "T",
-    "obj_value", "best_lb", "best_ub",
-    "cpu_s", "gap_pct",
-    "vss_pct", "evpi_pct",
+    "test_id",
+    "axis",
+    "axis_value",
+    "sample_ratio",
+    "I",
+    "J",
+    "H",
+    "S",
+    "T",
+    "demand_multiplier",
+    "road_capacity_multiplier",
+    "hospital_capacity_multiplier",
+    "obj_value",
+    "best_lb",
+    "best_ub",
+    "cpu_s",
+    "wall_s",
+    "gap_pct",
+    "vss_pct",
+    "evpi_pct",
+    "log_path",
+    "status",
     "note",
 ]
 
-results = []
 
-def save_csv():
-    with open(csv_path, "w", newline="", encoding="utf-8-sig") as f:
-        writer = csv.DictWriter(f, fieldnames=FIELDNAMES)
+AXIS_TO_SETTING = {
+    "scenario": "scenarios",
+    "ccp": "ccp_sample_size",
+    "sample_ratio": "sample_ratio",
+    "time_period": "time_periods",
+    "demand_multiplier": "demand_multiplier",
+    "road_capacity_multiplier": "road_capacity_multiplier",
+    "hospital_capacity_multiplier": "hospital_capacity_multiplier",
+}
+
+
+def load_sp_module():
+    """Load 'sp model.py' even though the filename contains a space."""
+    if not SP_MODEL_PATH.exists():
+        raise FileNotFoundError(f"Cannot find SP model file: {SP_MODEL_PATH}")
+
+    spec = importlib.util.spec_from_file_location("sp_model_runner", SP_MODEL_PATH)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"Cannot load module from {SP_MODEL_PATH}")
+
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def csv_row_count(filepath: Path) -> int:
+    with filepath.open(encoding="utf-8-sig", newline="") as file:
+        return max(0, sum(1 for _ in file) - 1)
+
+
+def fmt_value(value: Any) -> str:
+    if value is None:
+        return "ALL"
+    if isinstance(value, float):
+        return f"{value:g}"
+    return str(value)
+
+
+def blank_row() -> dict[str, Any]:
+    return {key: "NA" for key in FIELDNAMES}
+
+
+def write_results(csv_path: Path, rows: list[dict[str, Any]]) -> None:
+    with csv_path.open("w", newline="", encoding="utf-8-sig") as file:
+        writer = csv.DictWriter(file, fieldnames=FIELDNAMES)
         writer.writeheader()
-        writer.writerows(results)
+        writer.writerows(rows)
 
 
-# ── 開始執行 ─────────────────────────────────────────────────
-print("=" * 65)
-print("STRESS TEST  ─  J=16 固定，只縮放 I 和 H")
-print(f"Start : {datetime.datetime.now():%Y-%m-%d %H:%M:%S}")
-print(f"Config: S={cfg.SCENARIOS}, T={cfg.TIME_PERIODS}, "
-      f"time_limit={TIME_LIMIT:.0f}s, mip_gap={MIP_GAP*100:.0f}%")
-print(f"Full scale: I={full_I}, J={full_J}, H={full_H}")
-print(f"Early-stop: Gap > {GAP_STOP_PCT}%")
-print("=" * 65)
+def snapshot_logs() -> set[Path]:
+    if not LOG_DIR.exists():
+        return set()
+    return {path.resolve() for path in LOG_DIR.glob("*.log")}
 
-for run_idx, ratio in enumerate(SAMPLE_RATIOS, start=1):
-    I_n     = max(1, math.ceil(full_I * ratio))
-    H_n     = max(1, math.ceil(full_H * ratio))
-    pct_str = f"{ratio * 100:.0f}%"
-    test_id = f"ST{int(ratio * 100):03d}"
 
-    print(f"\n[{run_idx}/{len(SAMPLE_RATIOS)}]  {test_id}  ratio={pct_str}  "
-          f"I={I_n}, J={full_J}, H={H_n}  "
-          f"─  {datetime.datetime.now():%H:%M:%S}")
+def newest_created_log(before: set[Path]) -> Path | None:
+    if not LOG_DIR.exists():
+        return None
+    created = [path for path in LOG_DIR.glob("*.log") if path.resolve() not in before]
+    if not created:
+        return None
+    return max(created, key=lambda path: path.stat().st_mtime)
 
-    row = {k: "—" for k in FIELDNAMES}
-    row.update({
-        "test_id":          test_id,
-        "sample_ratio_pct": pct_str,
-        "I": I_n, "J": full_J, "H": H_n,
-        "S": cfg.SCENARIOS, "T": cfg.TIME_PERIODS,
-        "note": "",
-    })
 
-    t0 = time.time()
+def parse_number(text: str) -> float | None:
+    match = re.search(r"[-+]?\d+(?:\.\d+)?(?:[eE][-+]?\d+)?", text)
+    return float(match.group(0)) if match else None
+
+
+def parse_log_summary(log_path: Path | None) -> dict[str, float]:
+    if log_path is None or not log_path.exists():
+        return {}
+
+    patterns = {
+        "obj_value": re.compile(r"Objective Value:\s*([-+]?\d+(?:\.\d+)?)"),
+        "cpu_s": re.compile(r"CPU Time:\s*([-+]?\d+(?:\.\d+)?)\s*s"),
+        "best_ub": re.compile(r"Best UB \(Objective\):\s*([-+]?\d+(?:\.\d+)?)"),
+        "best_lb": re.compile(r"Best LB \(Bound\):\s*([-+]?\d+(?:\.\d+)?)"),
+        "gap_pct": re.compile(r"Final Gap:\s*([-+]?\d+(?:\.\d+)?)\s*%"),
+    }
+
+    values: dict[str, float] = {}
+    text = log_path.read_text(encoding="utf-8", errors="replace")
+    for key, pattern in patterns.items():
+        matches = pattern.findall(text)
+        if matches:
+            values[key] = float(matches[-1])
+    return values
+
+
+def safe_model_attr(model: Any, attr: str) -> float | None:
     try:
-        model, summary = sp.run_sp_model(
-            scenario_size=cfg.SCENARIOS,
-            sample_ratio=ratio,
-            time_limit=TIME_LIMIT,
-            mip_gap=MIP_GAP,
-        )
-    except Exception as exc:
-        row["cpu_s"] = f"{time.time() - t0:.1f}"
-        row["note"]  = f"ERROR: {exc}"
-        results.append(row)
-        save_csv()
-        print(f"  ✗ ERROR: {exc}  →  stopping.")
-        break
+        return float(getattr(model, attr))
+    except Exception:
+        return None
 
-    cpu = time.time() - t0
-    row["cpu_s"] = f"{cpu:.1f}"
 
-    # ── 無可行解 ────────────────────────────────────────────
+def model_fallback_summary(model: Any) -> dict[str, float]:
     if model is None:
-        row["note"] = "INFEASIBLE / no solution"
-        results.append(row)
-        save_csv()
-        print("  ✗ INFEASIBLE – stopping.")
-        break
+        return {}
 
-    # ── 讀取求解結果 ─────────────────────────────────────────
-    gap_pct = model.MIPGap * 100
-    row["gap_pct"]   = f"{gap_pct:.4f}"
-    row["best_ub"]   = f"{model.ObjVal:.2f}"
-    row["best_lb"]   = f"{model.ObjBound:.2f}"
-    row["obj_value"] = row["best_ub"]
+    values: dict[str, float] = {}
+    runtime = safe_model_attr(model, "Runtime")
+    gap = safe_model_attr(model, "MIPGap")
+    obj = safe_model_attr(model, "ObjVal")
+    bound = safe_model_attr(model, "ObjBound")
+
+    if runtime is not None:
+        values["cpu_s"] = runtime
+    if gap is not None:
+        values["gap_pct"] = gap * 100.0
+    if obj is not None:
+        values["obj_value"] = obj
+        values["best_ub"] = obj
+    if bound is not None:
+        values["best_lb"] = bound
+    return values
+
+
+def format_float(value: Any, digits: int = 4) -> str:
+    if value is None or value == "NA":
+        return "NA"
+    try:
+        return f"{float(value):.{digits}f}"
+    except Exception:
+        return "NA"
+
+
+def base_case_settings() -> dict[str, Any]:
+    return {
+        "scenarios": BASE_SCENARIOS,
+        "ccp_sample_size": BASE_CCP_SAMPLE_SIZE,
+        "sample_ratio": BASE_SAMPLE_RATIO,
+        "time_periods": BASE_TIME_PERIODS,
+        "demand_multiplier": BASE_DEMAND_MULTIPLIER,
+        "road_capacity_multiplier": BASE_ROAD_CAPACITY_MULTIPLIER,
+        "hospital_capacity_multiplier": BASE_HOSPITAL_CAPACITY_MULTIPLIER,
+    }
+
+
+def build_case(axis_value: Any) -> dict[str, Any]:
+    if EXPERIMENT_AXIS not in AXIS_TO_SETTING:
+        valid = ", ".join(sorted(AXIS_TO_SETTING))
+        raise ValueError(f"Unknown EXPERIMENT_AXIS={EXPERIMENT_AXIS!r}; choose one of: {valid}")
+
+    settings = base_case_settings()
+    settings[AXIS_TO_SETTING[EXPERIMENT_AXIS]] = axis_value
+    return settings
+
+
+def validate_case(settings: dict[str, Any]) -> None:
+    if not isinstance(settings["scenarios"], int) or settings["scenarios"] < 1:
+        raise ValueError("scenarios must be a positive integer")
+    if not isinstance(settings["time_periods"], int) or settings["time_periods"] < 1:
+        raise ValueError("time_periods must be a positive integer")
+    if not (0 < float(settings["sample_ratio"]) <= 1.0):
+        raise ValueError("sample_ratio must be in (0, 1.0]")
+    ccp_size = settings["ccp_sample_size"]
+    if ccp_size is not None and (not isinstance(ccp_size, int) or ccp_size < 1):
+        raise ValueError("ccp_sample_size must be None or a positive integer")
+
+
+@contextmanager
+def temporary_config(settings: dict[str, Any]):
+    keys = {
+        "SCENARIOS": settings["scenarios"],
+        "TIME_PERIODS": settings["time_periods"],
+        "SAMPLE_RATIO": settings["sample_ratio"],
+        "SP_SAMPLE_RATIO": settings["sample_ratio"],
+        "DEMAND_MULTIPLIER": settings["demand_multiplier"],
+        "ROAD_CAPACITY_MULTIPLIER": settings["road_capacity_multiplier"],
+        "HOSPITAL_CAPACITY_MULTIPLIER": settings["hospital_capacity_multiplier"],
+        "SP_TIME_LIMIT": TIME_LIMIT,
+        "SP_MIP_GAP": MIP_GAP,
+    }
+    if hasattr(cfg, "CCP_SAMPLE_SIZE"):
+        keys["CCP_SAMPLE_SIZE"] = settings["ccp_sample_size"]
+
+    original = {key: getattr(cfg, key) for key in keys}
+    try:
+        for key, value in keys.items():
+            setattr(cfg, key, value)
+        yield
+    finally:
+        for key, value in original.items():
+            setattr(cfg, key, value)
+
+
+@contextmanager
+def patched_generate_data(ccp_sample_size: int | None):
+    original_generate_data = cfg.generate_data
+
+    def generate_data_with_ccp(*args, **kwargs):
+        kwargs["ccp_sample_size"] = ccp_sample_size
+        return original_generate_data(*args, **kwargs)
+
+    cfg.generate_data = generate_data_with_ccp
+    try:
+        yield
+    finally:
+        cfg.generate_data = original_generate_data
+
+
+@contextmanager
+def patched_generate_scenarios(settings: dict[str, Any]):
+    original_generate_scenarios = cfg.generate_scenarios
+
+    def generate_scenarios_with_settings(*args, **kwargs):
+        kwargs.setdefault("demand_multiplier", settings["demand_multiplier"])
+        kwargs.setdefault("road_capacity_multiplier", settings["road_capacity_multiplier"])
+        kwargs.setdefault("hospital_capacity_multiplier", settings["hospital_capacity_multiplier"])
+        kwargs.setdefault("num_periods", settings["time_periods"])
+        return original_generate_scenarios(*args, **kwargs)
+
+    cfg.generate_scenarios = generate_scenarios_with_settings
+    try:
+        yield
+    finally:
+        cfg.generate_scenarios = original_generate_scenarios
+
+
+def estimate_counts(settings: dict[str, Any]) -> dict[str, int]:
+    full_i = csv_row_count(ROOT_DIR / "data" / cfg.DISASTER_CSV)
+    full_j = csv_row_count(ROOT_DIR / "data" / cfg.CCP_CSV)
+    full_h = csv_row_count(ROOT_DIR / "data" / cfg.HOSPITAL_CSV)
+    ratio = float(settings["sample_ratio"])
+    ccp_size = settings["ccp_sample_size"]
+    return {
+        "I": max(1, math.ceil(full_i * ratio)) if ratio < 1.0 else full_i,
+        "J": min(ccp_size, full_j) if ccp_size is not None else full_j,
+        "H": max(1, math.ceil(full_h * ratio)) if ratio < 1.0 else full_h,
+    }
+
+
+def run_one_case(sp_module: Any, run_idx: int, total_runs: int, axis_value: Any) -> dict[str, Any]:
+    settings = build_case(axis_value)
+    validate_case(settings)
+    counts = estimate_counts(settings)
+    test_id = f"{EXPERIMENT_AXIS}_{fmt_value(axis_value)}".replace(".", "p")
+
+    row = blank_row()
+    row.update(
+        {
+            "test_id": test_id,
+            "axis": EXPERIMENT_AXIS,
+            "axis_value": fmt_value(axis_value),
+            "sample_ratio": fmt_value(settings["sample_ratio"]),
+            "I": counts["I"],
+            "J": counts["J"],
+            "H": counts["H"],
+            "S": settings["scenarios"],
+            "T": settings["time_periods"],
+            "demand_multiplier": fmt_value(settings["demand_multiplier"]),
+            "road_capacity_multiplier": fmt_value(settings["road_capacity_multiplier"]),
+            "hospital_capacity_multiplier": fmt_value(settings["hospital_capacity_multiplier"]),
+            "status": "RUNNING",
+            "note": "",
+        }
+    )
+
+    print(
+        f"\n[{run_idx}/{total_runs}] {test_id} | "
+        f"I={counts['I']}, J={counts['J']}, H={counts['H']}, "
+        f"S={settings['scenarios']}, T={settings['time_periods']}"
+    )
+
+    logs_before = snapshot_logs()
+    wall_start = time.time()
+    model = None
+    summary = None
+    log_path = None
+
+    try:
+        with (
+            temporary_config(settings),
+            patched_generate_data(settings["ccp_sample_size"]),
+            patched_generate_scenarios(settings),
+        ):
+            model, summary = sp_module.run_sp_model(
+                scenario_size=settings["scenarios"],
+                sample_ratio=settings["sample_ratio"],
+                time_limit=TIME_LIMIT,
+                mip_gap=MIP_GAP,
+            )
+    finally:
+        log_path = newest_created_log(logs_before)
+
+    wall_s = time.time() - wall_start
+    row["wall_s"] = format_float(wall_s, digits=1)
+    row["log_path"] = str(log_path) if log_path is not None else "NA"
+
+    if model is None:
+        row["status"] = "STOP"
+        row["note"] = "INFEASIBLE / no solution / no model returned"
+        return row
+
+    parsed = model_fallback_summary(model)
+    parsed.update(parse_log_summary(log_path))
+
+    row["cpu_s"] = format_float(parsed.get("cpu_s"), digits=2)
+    row["gap_pct"] = format_float(parsed.get("gap_pct"), digits=4)
+    row["obj_value"] = format_float(parsed.get("obj_value"), digits=2)
+    row["best_ub"] = format_float(parsed.get("best_ub"), digits=2)
+    row["best_lb"] = format_float(parsed.get("best_lb"), digits=2)
 
     if summary is not None:
-        vss  = summary.get("VSS_pct")
-        evpi = summary.get("EVPI_pct")
-        row["vss_pct"]  = f"{vss:.4f}"  if vss  is not None else "—"
-        row["evpi_pct"] = f"{evpi:.4f}" if evpi is not None else "—"
+        row["vss_pct"] = format_float(summary.get("VSS_pct"), digits=4)
+        row["evpi_pct"] = format_float(summary.get("EVPI_pct"), digits=4)
 
-    stop = gap_pct > GAP_STOP_PCT
-    if stop:
-        row["note"] = f"STOP – gap {gap_pct:.2f}% > {GAP_STOP_PCT:.0f}%"
+    gap_pct = parsed.get("gap_pct")
+    cpu_s = parsed.get("cpu_s")
+    stop_reasons = []
+    if gap_pct is not None and gap_pct > GAP_STOP_PCT:
+        stop_reasons.append(f"Final Gap {gap_pct:.2f}% > {GAP_STOP_PCT:.2f}%")
+    if cpu_s is not None and cpu_s > CPU_STOP_SEC:
+        stop_reasons.append(f"CPU Time {cpu_s:.2f}s > {CPU_STOP_SEC:.2f}s")
 
-    results.append(row)
-    save_csv()
+    if stop_reasons:
+        row["status"] = "STOP"
+        row["note"] = "; ".join(stop_reasons)
+    else:
+        row["status"] = "OK"
 
-    status_mark = "✗ GAP TOO LARGE" if stop else "✓"
-    print(f"  {status_mark}  CPU={cpu:.1f}s  "
-          f"Gap={gap_pct:.2f}%  UB={model.ObjVal:.2f}  "
-          f"VSS={row['vss_pct']}%  EVPI={row['evpi_pct']}%")
+    print(
+        f"  status={row['status']} | CPU={row['cpu_s']}s | "
+        f"Gap={row['gap_pct']}% | UB={row['best_ub']} | "
+        f"VSS={row['vss_pct']}% | EVPI={row['evpi_pct']}%"
+    )
+    if row["note"]:
+        print(f"  note: {row['note']}")
 
-    if stop:
-        remaining = [f"{r*100:.0f}%" for r in SAMPLE_RATIOS[run_idx:]]
-        if remaining:
-            print(f"  → Skipping: {', '.join(remaining)}")
-        break
+    return row
 
 
-# ── 最終摘要 ─────────────────────────────────────────────────
-print("\n" + "=" * 65)
-print("SUMMARY")
-hdr = f"{'ID':>7} | {'Ratio':>5} | {'I':>4} {'H':>3} | {'CPU(s)':>7} | {'Gap%':>7} | {'VSS%':>7} | {'EVPI%':>7} | Note"
-print(hdr)
-print("-" * len(hdr))
-for r in results:
-    print(f"{r['test_id']:>7} | {r['sample_ratio_pct']:>5} | "
-          f"{str(r['I']):>4} {str(r['H']):>3} | "
-          f"{r['cpu_s']:>7} | {r['gap_pct']:>7} | "
-          f"{r['vss_pct']:>7} | {r['evpi_pct']:>7} | {r['note']}")
+def print_header(csv_path: Path) -> None:
+    base = base_case_settings()
+    print("=" * 80)
+    print("SP BATCH EXPERIMENT RUNNER")
+    print(f"Start: {dt.datetime.now():%Y-%m-%d %H:%M:%S}")
+    print(f"Axis: {EXPERIMENT_AXIS} = {EXPERIMENT_VALUES}")
+    print(
+        "Base: "
+        f"S={base['scenarios']}, J={fmt_value(base['ccp_sample_size'])}, "
+        f"sample={base['sample_ratio']}, T={base['time_periods']}, "
+        f"D={base['demand_multiplier']}, R={base['road_capacity_multiplier']}, "
+        f"H={base['hospital_capacity_multiplier']}"
+    )
+    print(
+        f"Solver: time_limit={TIME_LIMIT:.0f}s, mip_gap={MIP_GAP:g}; "
+        f"stop if gap>{GAP_STOP_PCT:g}% or CPU>{CPU_STOP_SEC:g}s"
+    )
+    print(f"Output CSV: {csv_path}")
+    print("=" * 80)
 
-print("=" * 65)
-print(f"Results → {csv_path}")
-print(f"End   : {datetime.datetime.now():%Y-%m-%d %H:%M:%S}")
+
+def print_summary(rows: list[dict[str, Any]], csv_path: Path) -> None:
+    print("\n" + "=" * 80)
+    print("SUMMARY")
+    header = (
+        f"{'ID':>20} | {'I':>4} {'J':>4} {'H':>4} | {'S':>3} {'T':>3} | "
+        f"{'CPU(s)':>9} | {'Gap%':>9} | {'Status':>6} | Note"
+    )
+    print(header)
+    print("-" * len(header))
+    for row in rows:
+        print(
+            f"{row['test_id']:>20} | {str(row['I']):>4} {str(row['J']):>4} {str(row['H']):>4} | "
+            f"{str(row['S']):>3} {str(row['T']):>3} | {str(row['cpu_s']):>9} | "
+            f"{str(row['gap_pct']):>9} | {str(row['status']):>6} | {row['note']}"
+        )
+    print("=" * 80)
+    print(f"Results: {csv_path}")
+    print(f"End: {dt.datetime.now():%Y-%m-%d %H:%M:%S}")
+
+
+def main() -> None:
+    timestamp = dt.datetime.now().strftime("%Y%m%d_%H%M%S")
+    csv_path = ROOT_DIR / f"{RESULT_PREFIX}_{EXPERIMENT_AXIS}_{timestamp}.csv"
+    rows: list[dict[str, Any]] = []
+
+    sp_module = load_sp_module()
+    print_header(csv_path)
+
+    for run_idx, axis_value in enumerate(EXPERIMENT_VALUES, start=1):
+        try:
+            row = run_one_case(sp_module, run_idx, len(EXPERIMENT_VALUES), axis_value)
+        except Exception as exc:
+            row = blank_row()
+            row.update(
+                {
+                    "test_id": f"{EXPERIMENT_AXIS}_{fmt_value(axis_value)}",
+                    "axis": EXPERIMENT_AXIS,
+                    "axis_value": fmt_value(axis_value),
+                    "status": "STOP",
+                    "note": f"ERROR: {exc}",
+                }
+            )
+            print(f"  ERROR: {exc}")
+
+        rows.append(row)
+        write_results(csv_path, rows)
+
+        if row["status"] == "STOP":
+            remaining = [fmt_value(value) for value in EXPERIMENT_VALUES[run_idx:]]
+            if remaining:
+                print(f"  Skipping remaining cases: {', '.join(remaining)}")
+            if STOP_ON_ERROR:
+                break
+
+    print_summary(rows, csv_path)
+
+
+if __name__ == "__main__":
+    main()

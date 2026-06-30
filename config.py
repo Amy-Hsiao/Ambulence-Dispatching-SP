@@ -56,7 +56,7 @@ PARAMETERS = {
     "hospital_supply_upper_bound": 600.0,
     "ccp_staff_upper_bound": 104.0,
     "ccp_ambulance_upper_bound": 18.0,
-    "ccp_supply_upper_bound": 860.0,
+    "ccp_supply_upper_bound": 2000.0,
     "hospital_ambulance_fleet": 18.0,
     "ccp_ambulance_casualty_capacity": 2.0,
     "hospital_ambulance_casualty_capacity": 2.0,
@@ -377,7 +377,7 @@ def generate_scenarios(
         hospital_capacity[scenario_id] = {}
         for hospital_id in hospital_ids:
             rng = _rng_with_audit(audit_rows, master_seed, "hospital_capacity", scenario_id, hospital_id)
-            first_cap = rng.uniform(35.0, 70.0) * hospital_capacity_multiplier * omega_hospital
+            first_cap = rng.uniform(30.0, 50.0) * hospital_capacity_multiplier * omega_hospital
             hospital_capacity[scenario_id][hospital_id] = {
                 period_id: first_cap * (0.9 ** (pidx - 1))
                 for pidx, period_id in enumerate(period_ids, start=1)

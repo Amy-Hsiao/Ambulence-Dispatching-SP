@@ -24,8 +24,8 @@ Implementation notes
 --------------------
 * config.generate_scenarios freezes master_seed=MASTER_SEED as a default
   argument at import time; patched_generate_scenarios() injects it explicitly.
-* Results CSV has a fixed name and is keyed by test_id: rows with status OK
-  are skipped on re-run, so the batch can be interrupted and resumed.
+* Every launch re-runs ALL cases from scratch (no resume/skip); the CSV and
+  xlsx are rewritten after each completed case.
 * CSV column order matches the paper's Excel table:
   factor | I | J | H | S | T | obj_value | First Stage Decision | Best LB |
   Best UB | CPU Time(s) | num_vars | num_constrs | Nodes | Iteration |
@@ -49,7 +49,7 @@ from typing import Any
 # Parameter setting area
 # =============================================================================
 DELTAS = [0.2, 0.5, 0.7]          # multiplier range = [1 - d, 1 + d]
-SEEDS  = [42]                     # 之後要加 seed 改成 [42, 123, ...] 重跑即可（已完成的組合會自動跳過）
+SEEDS  = [42]                     # 之後要加 seed 改成 [42, 123, ...]（每次執行全部重跑）
 
 AXES = [
     # (axis_label,      use_omega, use_kmeans)
@@ -63,7 +63,7 @@ NORMALIZE_SPATIAL = True          # 空間乘數依群集規模加權正規化�
 TIME_LIMIT   = 3600.0
 MIP_GAP      = 0.01
 
-RESULT_CSV_NAME  = "sensitivity_uncertainty_results.csv"   # fixed name -> resumable (source of truth)
+RESULT_CSV_NAME  = "sensitivity_uncertainty_results.csv"   # 每次執行整檔重寫
 RESULT_XLSX_NAME = "sensitivity_uncertainty_results.xlsx"  # Excel 匯出（欄位對齊論文表格）
 LOG_SUBDIR_NAME  = "east district stress test"
 
@@ -188,8 +188,8 @@ XLSX_COLUMNS = [
     ("Nodes",                "nodes"),
     ("Iteration",            "iterations"),
     ("Final Gap(%)",         "gap_pct"),
-    ("VSS",                  "vss_pct"),
-    ("EVPI",                 "evpi_pct"),
+    ("VSS(%)",               "vss_pct"),
+    ("EVPI(%)",              "evpi_pct"),
 ]
 
 
@@ -495,11 +495,8 @@ def main() -> None:
     cases = [(axis, uo, uk, d, s)
              for (axis, uo, uk) in AXES for d in DELTAS for s in SEEDS]
     order = [case_id(axis, d, s) for (axis, _uo, _uk, d, s) in cases]
-    rows_by_id = load_existing_rows()
-
-    done = [tid for tid in order if rows_by_id.get(tid, {}).get("status") == "OK"]
-    todo = [c for c in cases
-            if rows_by_id.get(case_id(c[0], c[3], c[4]), {}).get("status") != "OK"]
+    rows_by_id: dict[str, dict[str, Any]] = {}   # 每次執行全部重跑，不讀舊結果
+    todo = cases
 
     print("=" * 78)
     print("UNCERTAINTY-SOURCE SENSITIVITY RUNNER")
@@ -509,7 +506,7 @@ def main() -> None:
     print(f"Fixed   : S={cfg.SCENARIOS}, T={cfg.TIME_PERIODS}, "
           f"normalize_spatial={NORMALIZE_SPATIAL}")
     print(f"Solver  : time_limit={TIME_LIMIT:.0f}s, mip_gap={MIP_GAP:g}")
-    print(f"Resume  : {len(done)} already OK, {len(todo)} to run")
+    print(f"Rerun   : all {len(todo)} cases run from scratch (no resume)")
     print(f"Logs    : {LOG_SUBDIR}")
     print(f"Output  : {CSV_PATH}")
     print(f"Excel   : {XLSX_PATH}")

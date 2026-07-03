@@ -79,8 +79,14 @@ def _solve_sub(
     time_limit: float,
     mip_gap: float,
     fixed_first_stage=None,
+    warm_start_first_stage=None,
 ):
-    """Build, solve, and return (best_lb, best_ub, gap, model, vars_dict)."""
+    """Build, solve, and return (best_lb, best_ub, gap, model, vars_dict).
+
+    warm_start_first_stage: optional {"X","V","U","Y"} dict used only as a MIP
+    start (incumbent hint). It does NOT constrain the model — definitions and
+    optimal values are unaffected; it merely speeds up convergence.
+    """
     m, v = model_core.build_gurobi_model(
         I, J, H, L, L_transfer, T, S,
         params, scenario_data, probabilities,
@@ -90,6 +96,17 @@ def _solve_sub(
         mip_gap=mip_gap,
         fixed_first_stage=fixed_first_stage,
     )
+    if warm_start_first_stage is not None and fixed_first_stage is None:
+        try:
+            for j in J:
+                v["X"][j].Start = warm_start_first_stage["X"][j]
+                v["V"][j].Start = warm_start_first_stage["V"][j]
+                v["U"][j].Start = warm_start_first_stage["U"][j]
+            for h in H:
+                for j in J:
+                    v["Y"][h, j].Start = warm_start_first_stage["Y"][(h, j)]
+        except (KeyError, TypeError):
+            pass  # warm start is best-effort only
     m.optimize()
 
     feasible = m.SolCount > 0 and m.status in (GRB.OPTIMAL, GRB.TIME_LIMIT)
@@ -126,6 +143,9 @@ def compute_vss_evpi(
     """
     time_limit = config.SP_TIME_LIMIT if time_limit is None else time_limit
     mip_gap = config.SP_MIP_GAP if mip_gap is None else mip_gap
+    # 子問題各自的時間預算（無此設定時退回 SP 的 time_limit，行為與舊版相同）
+    ev_time_limit  = getattr(config, "VSS_EVPI_EV_TIME_LIMIT",  time_limit)
+    eev_time_limit = getattr(config, "VSS_EVPI_EEV_TIME_LIMIT", time_limit)
     ws_time_limit = config.VSS_EVPI_WS_TIME_LIMIT
     ws_mip_gap = config.VSS_EVPI_WS_MIP_GAP
 
@@ -171,7 +191,7 @@ def compute_vss_evpi(
         "EV", I, J, H, L, L_tr, T, ev_S,
         params, ev_sd, ev_probs,
         cap_ij, cap_jh, cost_ij, cost_jh,
-        time_limit, mip_gap,
+        ev_time_limit, mip_gap,
     )
 
     # Extract EV first-stage solution
@@ -203,7 +223,7 @@ def compute_vss_evpi(
             "EEV", I, J, H, L, L_tr, T, S_selected,
             params, eev_sd, norm_probs,
             cap_ij, cap_jh, cost_ij, cost_jh,
-            time_limit, mip_gap,
+            eev_time_limit, mip_gap,
             fixed_first_stage=ev_first_stage,
         )
     else:
@@ -232,6 +252,7 @@ def compute_vss_evpi(
             params, ws_sd, ws_probs,
             cap_ij, cap_jh, cost_ij, cost_jh,
             ws_time_limit, ws_mip_gap,
+            warm_start_first_stage=ev_first_stage,  # MIP start 加速收斂，不影響最優解定義
         )
 
         ws_scenario_results[s] = {

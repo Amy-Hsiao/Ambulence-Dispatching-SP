@@ -1,0 +1,64 @@
+﻿factor,I,J,H,S,T,obj_value,first_stage_decision,best_lb,best_ub,cpu_s,num_vars,num_constrs,nodes,iterations,gap_pct,vss_pct,evpi_pct,test_id,axis,delta,omega_low,omega_high,seed,normalized,use_omega,use_kmeans,ev_obj,eev_obj,ws_obj,vss_abs,evpi_abs,n_open_ccp,wall_s,log_path,status,note
+"K-means only U[0.8,1.2]",129,10,16,5,8,22085284.49,"CCP J02  -> X: 1, Staff(V): 37, Amb(U): 14, MedicalSupply(Y): 735.00
+CCP J05  -> X: 1, Staff(V): 43, Amb(U): 13, MedicalSupply(Y): 836.00
+CCP J06  -> X: 1, Staff(V): 42, Amb(U): 16, MedicalSupply(Y): 866.00
+CCP J08  -> X: 1, Staff(V): 55, Amb(U): 17, MedicalSupply(Y): 1154.00
+CCP J09  -> X: 1, Staff(V): 35, Amb(U): 14, MedicalSupply(Y): 686.00
+CCP J10  -> X: 1, Staff(V): 27, Amb(U):  9, MedicalSupply(Y): 522.00",21536390.01,22085284.49,3600.21,186470,80058,2554,6343714,2.4853,2.5301,0.1969,spatial_only_d0p2_seed42,spatial_only,0.2,0.8,1.2,42,True,False,True,21988599.51,22644073.01,22041791.47,558788.52,43493.01,6,3806.2,C:\Users\User\Desktop\救護車派遣\Ambulence-Dispatching-SP\logs\east district stress test\SP_seed42_scen5_usedALL_period8_sample1p0_D1p0_R1p0_H1p0_tl3600p0_gap0p01_r06.log,OK,
+"K-means only U[0.5,1.5]",129,10,16,5,8,22093124.81,"CCP J01  -> X: 1, Staff(V): 45, Amb(U): 17, MedicalSupply(Y): 936.00
+CCP J02  -> X: 1, Staff(V): 37, Amb(U): 14, MedicalSupply(Y): 742.00
+CCP J05  -> X: 1, Staff(V): 40, Amb(U): 13, MedicalSupply(Y): 785.00
+CCP J08  -> X: 1, Staff(V): 52, Amb(U): 16, MedicalSupply(Y): 1082.00
+CCP J09  -> X: 1, Staff(V): 36, Amb(U): 14, MedicalSupply(Y): 706.00
+CCP J10  -> X: 1, Staff(V): 28, Amb(U):  9, MedicalSupply(Y): 539.00",21539132.51,22093124.81,3600.27,186470,80058,2149,3695691,2.5075,2.5154,0.2690,spatial_only_d0p5_seed42,spatial_only,0.5,0.5,1.5,42,True,False,True,21989716.91,22648859.61,22033694.46,555734.79,59430.36,6,3921.4,C:\Users\User\Desktop\救護車派遣\Ambulence-Dispatching-SP\logs\east district stress test\SP_seed42_scen5_usedALL_period8_sample1p0_D1p0_R1p0_H1p0_tl3600p0_gap0p01_r06.log,OK,
+"K-means only U[0.3,1.7]",129,10,16,5,8,22094963.84,"CCP J02  -> X: 1, Staff(V): 37, Amb(U): 14, MedicalSupply(Y): 733.00
+CCP J05  -> X: 1, Staff(V): 43, Amb(U): 13, MedicalSupply(Y): 822.00
+CCP J06  -> X: 1, Staff(V): 43, Amb(U): 17, MedicalSupply(Y): 910.00
+CCP J08  -> X: 1, Staff(V): 56, Amb(U): 17, MedicalSupply(Y): 1182.00
+CCP J09  -> X: 1, Staff(V): 34, Amb(U): 13, MedicalSupply(Y): 655.00
+CCP J10  -> X: 1, Staff(V): 26, Amb(U):  9, MedicalSupply(Y): 497.00",21549772.47,22094963.84,3600.24,186470,80058,2175,5379325,2.4675,2.5296,0.3051,spatial_only_d0p7_seed42,spatial_only,0.7,0.3,1.7,42,True,False,True,21982477.81,22653884.31,22027546.60,558920.47,67417.25,6,3868.6,C:\Users\User\Desktop\救護車派遣\Ambulence-Dispatching-SP\logs\east district stress test\SP_seed42_scen5_usedALL_period8_sample1p0_D1p0_R1p0_H1p0_tl3600p0_gap0p01_r06.log,OK,
+"Scenario multiplier only U[0.8,1.2]",129,10,16,5,8,25433487.35,"CCP J01  -> X: 1, Staff(V): 33, Amb(U): 14, MedicalSupply(Y): 648.00
+CCP J02  -> X: 1, Staff(V): 39, Amb(U): 15, MedicalSupply(Y): 807.00
+CCP J05  -> X: 1, Staff(V): 41, Amb(U): 13, MedicalSupply(Y): 821.00
+CCP J06  -> X: 1, Staff(V): 36, Amb(U): 14, MedicalSupply(Y): 705.00
+CCP J08  -> X: 1, Staff(V): 56, Amb(U): 16, MedicalSupply(Y): 1158.00
+CCP J09  -> X: 1, Staff(V): 36, Amb(U): 14, MedicalSupply(Y): 715.00
+CCP J10  -> X: 1, Staff(V): 31, Amb(U): 11, MedicalSupply(Y): 591.00",25430614.46,25433487.35,1341.01,186470,80058,2389,5483821,0.0113,15.3255,2.8491,global_only_d0p2_seed42,global_only,0.2,0.8,1.2,42,NA,True,False,23965799.36,29331300.00,24708854.96,3897812.65,724632.39,7,1708.8,C:\Users\User\Desktop\救護車派遣\Ambulence-Dispatching-SP\logs\east district stress test\SP_seed42_scen5_usedALL_period8_sample1p0_D1p0_R1p0_H1p0_tl3600p0_gap0p01_r06.log,OK,
+"Scenario multiplier only U[0.5,1.5]",129,10,16,5,8,30112378.54,"CCP J01  -> X: 1, Staff(V): 36, Amb(U): 15, MedicalSupply(Y): 715.00
+CCP J02  -> X: 1, Staff(V): 40, Amb(U): 16, MedicalSupply(Y): 819.00
+CCP J03  -> X: 1, Staff(V): 20, Amb(U):  9, MedicalSupply(Y): 355.00
+CCP J05  -> X: 1, Staff(V): 49, Amb(U): 15, MedicalSupply(Y): 983.00
+CCP J06  -> X: 1, Staff(V): 38, Amb(U): 15, MedicalSupply(Y): 757.00
+CCP J08  -> X: 1, Staff(V): 63, Amb(U): 18, MedicalSupply(Y): 1333.00
+CCP J09  -> X: 1, Staff(V): 41, Amb(U): 15, MedicalSupply(Y): 827.00
+CCP J10  -> X: 1, Staff(V): 41, Amb(U): 14, MedicalSupply(Y): 769.00",29835976.26,30112378.54,59.68,186470,80058,1,38498,0.9179,40.3483,7.1885,global_only_d0p5_seed42,global_only,0.5,0.5,1.5,42,NA,True,False,27189212.06,42262203.56,27947737.74,12149825.01,2164640.80,8,205.1,C:\Users\User\Desktop\救護車派遣\Ambulence-Dispatching-SP\logs\east district stress test\SP_seed42_scen5_usedALL_period8_sample1p0_D1p0_R1p0_H1p0_tl3600p0_gap0p01_r06.log,OK,
+"Scenario multiplier only U[0.3,1.7]",129,10,16,5,8,34004629.81,"CCP J01  -> X: 1, Staff(V): 38, Amb(U): 16, MedicalSupply(Y): 782.00
+CCP J02  -> X: 1, Staff(V): 35, Amb(U): 14, MedicalSupply(Y): 682.00
+CCP J03  -> X: 1, Staff(V): 26, Amb(U): 11, MedicalSupply(Y): 463.00
+CCP J05  -> X: 1, Staff(V): 46, Amb(U): 15, MedicalSupply(Y): 898.00
+CCP J06  -> X: 1, Staff(V): 39, Amb(U): 16, MedicalSupply(Y): 800.00
+CCP J07  -> X: 1, Staff(V): 26, Amb(U): 12, MedicalSupply(Y): 528.00
+CCP J08  -> X: 1, Staff(V): 68, Amb(U): 18, MedicalSupply(Y): 1415.00
+CCP J09  -> X: 1, Staff(V): 44, Amb(U): 16, MedicalSupply(Y): 891.00
+CCP J10  -> X: 1, Staff(V): 45, Amb(U): 14, MedicalSupply(Y): 852.00",33824421.83,34004629.81,45.83,186470,80058,1,30389,0.5300,58.2302,8.5914,global_only_d0p7_seed42,global_only,0.7,0.3,1.7,42,NA,True,False,30118165.52,53805597.57,31083145.81,19800967.76,2921484.00,9,137.2,C:\Users\User\Desktop\救護車派遣\Ambulence-Dispatching-SP\logs\east district stress test\SP_seed42_scen5_usedALL_period8_sample1p0_D1p0_R1p0_H1p0_tl3600p0_gap0p01_r06.log,OK,
+"Both (omega + K-means) U[0.8,1.2]",129,10,16,5,8,25426150.72,"CCP J01  -> X: 1, Staff(V): 33, Amb(U): 14, MedicalSupply(Y): 638.00
+CCP J02  -> X: 1, Staff(V): 39, Amb(U): 15, MedicalSupply(Y): 799.00
+CCP J05  -> X: 1, Staff(V): 41, Amb(U): 13, MedicalSupply(Y): 819.00
+CCP J06  -> X: 1, Staff(V): 37, Amb(U): 15, MedicalSupply(Y): 739.00
+CCP J08  -> X: 1, Staff(V): 57, Amb(U): 17, MedicalSupply(Y): 1186.00
+CCP J09  -> X: 1, Staff(V): 34, Amb(U): 13, MedicalSupply(Y): 677.00
+CCP J10  -> X: 1, Staff(V): 30, Amb(U): 10, MedicalSupply(Y): 578.00",25422043.55,25426150.72,1361.09,186470,80058,1519,4954636,0.0162,14.4012,2.8534,both_d0p2_seed42,both,0.2,0.8,1.2,42,True,True,True,23948044.82,29087816.71,24700653.15,3661665.99,725497.57,7,1653.0,C:\Users\User\Desktop\救護車派遣\Ambulence-Dispatching-SP\logs\east district stress test\SP_seed42_scen5_usedALL_period8_sample1p0_D1p0_R1p0_H1p0_tl3600p0_gap0p01_r06.log,OK,
+"Both (omega + K-means) U[0.5,1.5]",129,10,16,5,8,25418604.11,"CCP J01  -> X: 1, Staff(V): 34, Amb(U): 14, MedicalSupply(Y): 664.00
+CCP J02  -> X: 1, Staff(V): 39, Amb(U): 15, MedicalSupply(Y): 797.00
+CCP J05  -> X: 1, Staff(V): 40, Amb(U): 12, MedicalSupply(Y): 787.00
+CCP J06  -> X: 1, Staff(V): 37, Amb(U): 15, MedicalSupply(Y): 742.00
+CCP J08  -> X: 1, Staff(V): 56, Amb(U): 17, MedicalSupply(Y): 1179.00
+CCP J09  -> X: 1, Staff(V): 36, Amb(U): 13, MedicalSupply(Y): 704.00
+CCP J10  -> X: 1, Staff(V): 29, Amb(U): 10, MedicalSupply(Y): 556.00",24643456.18,25418604.11,3600.16,186470,80058,2109,4558876,3.0495,13.0138,2.8610,both_d0p5_seed42,both,0.5,0.5,1.5,42,True,True,True,23925421.13,28726518.79,24691370.10,3307914.67,727234.01,7,3880.4,C:\Users\User\Desktop\救護車派遣\Ambulence-Dispatching-SP\logs\east district stress test\SP_seed42_scen5_usedALL_period8_sample1p0_D1p0_R1p0_H1p0_tl3600p0_gap0p01_r06.log,OK,
+"Both (omega + K-means) U[0.3,1.7]",129,10,16,5,8,25417219.39,"CCP J01  -> X: 1, Staff(V): 36, Amb(U): 15, MedicalSupply(Y): 721.00
+CCP J02  -> X: 1, Staff(V): 38, Amb(U): 14, MedicalSupply(Y): 759.00
+CCP J05  -> X: 1, Staff(V): 41, Amb(U): 13, MedicalSupply(Y): 804.00
+CCP J06  -> X: 1, Staff(V): 35, Amb(U): 14, MedicalSupply(Y): 697.00
+CCP J08  -> X: 1, Staff(V): 56, Amb(U): 17, MedicalSupply(Y): 1178.00
+CCP J09  -> X: 1, Staff(V): 37, Amb(U): 14, MedicalSupply(Y): 723.00
+CCP J10  -> X: 1, Staff(V): 28, Amb(U):  9, MedicalSupply(Y): 541.00",24805940.23,25417219.39,3600.22,186470,80058,2731,6081887,2.4050,12.2319,2.8571,both_d0p7_seed42,both,0.7,0.3,1.7,42,True,True,True,23907785.66,28526219.77,24691035.13,3109000.38,726184.26,7,3905.3,C:\Users\User\Desktop\救護車派遣\Ambulence-Dispatching-SP\logs\east district stress test\SP_seed42_scen5_usedALL_period8_sample1p0_D1p0_R1p0_H1p0_tl3600p0_gap0p01_r06.log,OK,

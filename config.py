@@ -25,8 +25,11 @@ DEMAND_UNIFORM_HIGH = 5.0
 SCENARIO_OMEGA_LOW  = 0.8   # 全局情境乘數 下界（縮小，讓空間乘數主導）
 SCENARIO_OMEGA_HIGH = 1.2   # 全局情境乘數 上界
 SCENARIO_SPATIAL_CLUSTERS   = 3     # 地理群集數（K-means）
-SCENARIO_SPATIAL_OMEGA_LOW  = 0.3   # 群集需求乘數 下界
-SCENARIO_SPATIAL_OMEGA_HIGH = 2.5   # 群集需求乘數 上界
+SCENARIO_SPATIAL_OMEGA_LOW  = 0.5   # 群集需求乘數 下界
+SCENARIO_SPATIAL_OMEGA_HIGH = 2.0   # 群集需求乘數 上界
+NORMALIZE_SPATIAL_OMEGA = True  # True: 空間乘數依群集規模加權正規化(每情境加權平均=1，純重分配不改總量)
+USE_SCENARIO_OMEGA  = True   # [Ablation 開關] True: 每情境抽全局 omega；False: 固定 1.0
+USE_SPATIAL_KMEANS  = True   # [Ablation 開關] True: K-means 空間異質性；False: 不分群
 ROAD_CAPACITY_MULTIPLIER = 1.0
 HOSPITAL_CAPACITY_MULTIPLIER = 1.0
 SAMPLE_RATIO = 1.0           # East District 直接用全部 I 和 H
@@ -315,10 +318,13 @@ def generate_scenarios(
 
     for scenario_id in scenario_ids:
         if apply_omega:
-            # 全局乘數（整體規模）
-            omega_demand   = _rng_with_audit(audit_rows, master_seed, "omega_demand",   scenario_id).uniform(SCENARIO_OMEGA_LOW, SCENARIO_OMEGA_HIGH)
-            omega_road     = _rng_with_audit(audit_rows, master_seed, "omega_road",     scenario_id).uniform(SCENARIO_OMEGA_LOW, SCENARIO_OMEGA_HIGH)
-            omega_hospital = _rng_with_audit(audit_rows, master_seed, "omega_hospital", scenario_id).uniform(SCENARIO_OMEGA_LOW, SCENARIO_OMEGA_HIGH)
+            # 全局乘數（整體規模；受 USE_SCENARIO_OMEGA 開關控制）
+            if USE_SCENARIO_OMEGA:
+                omega_demand   = _rng_with_audit(audit_rows, master_seed, "omega_demand",   scenario_id).uniform(SCENARIO_OMEGA_LOW, SCENARIO_OMEGA_HIGH)
+                omega_road     = _rng_with_audit(audit_rows, master_seed, "omega_road",     scenario_id).uniform(SCENARIO_OMEGA_LOW, SCENARIO_OMEGA_HIGH)
+                omega_hospital = _rng_with_audit(audit_rows, master_seed, "omega_hospital", scenario_id).uniform(SCENARIO_OMEGA_LOW, SCENARIO_OMEGA_HIGH)
+            else:
+                omega_demand = omega_road = omega_hospital = 1.0
             # 空間乘數（各群集的需求集中度）
             if disaster_cluster is not None:
                 spatial_omega = {
@@ -327,6 +333,18 @@ def generate_scenarios(
                     )
                     for ki in range(n_clusters)
                 }
+                # 正規化：依群集內災區數加權，使加權平均 = 1
+                # → 空間乘數只做「重分配」，期望總需求不變（總量由全局 omega 控制）
+                if NORMALIZE_SPATIAL_OMEGA:
+                    cluster_counts = {ki: 0 for ki in range(n_clusters)}
+                    for cid in disaster_cluster.values():
+                        cluster_counts[cid] = cluster_counts.get(cid, 0) + 1
+                    total_areas = sum(cluster_counts.values())
+                    weighted_mean = sum(
+                        cluster_counts.get(ki, 0) * w for ki, w in spatial_omega.items()
+                    ) / total_areas
+                    if weighted_mean > 1e-12:
+                        spatial_omega = {ki: w / weighted_mean for ki, w in spatial_omega.items()}
             else:
                 spatial_omega = None
         else:
@@ -524,12 +542,16 @@ def generate_data(
         "scaled_total_available_ccp_ambulances": deterministic_parameters["total_available_ccp_ambulances"],
     }
 
-    # 地理群集（固定 seed，與 MASTER_SEED 綁定，保證可重現）
-    cluster_assignments = _kmeans_cluster(
-        disaster_records, SCENARIO_SPATIAL_CLUSTERS, seed=MASTER_SEED
-    )
-    disaster_cluster = {r.id: c for r, c in zip(disaster_records, cluster_assignments)}
-    cluster_sizes = {ki: sum(1 for c in cluster_assignments if c == ki) for ki in range(SCENARIO_SPATIAL_CLUSTERS)}
+    # 地理群集（受 USE_SPATIAL_KMEANS 開關控制）
+    if USE_SPATIAL_KMEANS:
+        cluster_assignments = _kmeans_cluster(
+            disaster_records, SCENARIO_SPATIAL_CLUSTERS, seed=MASTER_SEED
+        )
+        disaster_cluster = {r.id: c for r, c in zip(disaster_records, cluster_assignments)}
+        cluster_sizes = {ki: sum(1 for c in cluster_assignments if c == ki) for ki in range(SCENARIO_SPATIAL_CLUSTERS)}
+    else:
+        disaster_cluster = None
+        cluster_sizes = {}
 
     # 隨機情境（apply_omega=True，含空間異質性）
     scenario_data, seed_audit = generate_scenarios(
@@ -586,6 +608,7 @@ def generate_data(
             "scenario_omega_range": [SCENARIO_OMEGA_LOW, SCENARIO_OMEGA_HIGH],
             "scenario_spatial_clusters": SCENARIO_SPATIAL_CLUSTERS,
             "scenario_spatial_omega_range": [SCENARIO_SPATIAL_OMEGA_LOW, SCENARIO_SPATIAL_OMEGA_HIGH],
+            "normalize_spatial_omega": NORMALIZE_SPATIAL_OMEGA,
             "cluster_sizes": cluster_sizes,
             "sample_ratio": sample_ratio,
             "ccp_sample_size": ccp_sample_size,
@@ -635,6 +658,7 @@ def generate_data(
             "scenario_omega_range":         [SCENARIO_OMEGA_LOW, SCENARIO_OMEGA_HIGH],
             "scenario_spatial_clusters":    SCENARIO_SPATIAL_CLUSTERS,
             "scenario_spatial_omega_range": [SCENARIO_SPATIAL_OMEGA_LOW, SCENARIO_SPATIAL_OMEGA_HIGH],
+            "normalize_spatial_omega":      NORMALIZE_SPATIAL_OMEGA,
             "road_capacity_formula":        "distance_m * 0.05",
             "transport_cost_formula":       "100 + 150 * distance_m / 1000",
             "hospital_capacity_decay":      "period_1_capacity * 0.9^(t - 1)",

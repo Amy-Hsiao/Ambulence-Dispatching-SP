@@ -1,0 +1,135 @@
+Log file: logs\SP_seed42_scen5_usedALL_period8_sample1p0_D1p0_R1p0_H1p0_tl3600p0_gap0p01_r05.log
+==================================================
+RUN METADATA
+==================================================
+- model_type: SP
+- scenario_size_used: 5
+- time_limit: 3600.0
+- mip_gap: 0.01
+- master_seed: 42
+- num_scenarios_config: 5
+- num_periods: 8
+- sample_ratio: 1.0
+- sampled_disaster_areas: 129
+- sampled_ccps: 10
+- sampled_hospitals: 16
+- demand_multiplier: 1.0
+- road_capacity_multiplier: 1.0
+- hospital_capacity_multiplier: 1.0
+==================================================
+Set parameter Username
+Set parameter LicenseID to value 2782025
+Academic license - for non-commercial use only - expires 2027-02-23
+==================================================
+
+Optimizing SP Model (RP)...
+
+[Time: 1.3s] Best LB:         0.00 | Best UB: 404295910.89 | Gap: 100.00%
+[Time: 18.6s] Best LB:  24629824.05 | Best UB:  29970323.66 | Gap:  17.82%
+[Time: 114.5s] Best LB:  24651175.27 | Best UB:  29970323.66 | Gap:  17.75%
+[Time: 121.3s] Best LB:  24651175.65 | Best UB:  28473669.51 | Gap:  13.42%
+[Time: 201.8s] Best LB:  24653810.31 | Best UB:  28472959.06 | Gap:  13.41%
+[Time: 230.2s] Best LB:  24654084.83 | Best UB:  28472959.06 | Gap:  13.41%
+[Time: 241.0s] Best LB:  24654112.42 | Best UB:  28472959.06 | Gap:  13.41%
+[Time: 369.1s] Best LB:  24658779.93 | Best UB:  27115420.46 | Gap:   9.06%
+[Time: 378.7s] Best LB:  24658779.96 | Best UB:  25492146.07 | Gap:   3.27%
+[Time: 452.9s] Best LB:  24659208.15 | Best UB:  25492146.07 | Gap:   3.27%
+[Time: 463.6s] Best LB:  24659243.58 | Best UB:  25492146.07 | Gap:   3.27%
+[Time: 487.8s] Best LB:  24659247.61 | Best UB:  25492146.07 | Gap:   3.27%
+[Time: 522.0s] Best LB:  24659549.16 | Best UB:  25492146.07 | Gap:   3.27%
+[Time: 524.9s] Best LB:  24659549.17 | Best UB:  25453004.73 | Gap:   3.12%
+[Time: 544.4s] Best LB:  24659629.39 | Best UB:  25453004.73 | Gap:   3.12%
+[Time: 554.6s] Best LB:  24659647.35 | Best UB:  25453004.73 | Gap:   3.12%
+[Time: 569.3s] Best LB:  24659647.35 | Best UB:  25453004.73 | Gap:   3.12%
+[Time: 580.8s] Best LB:  24659665.34 | Best UB:  25453004.73 | Gap:   3.12%
+[Time: 623.8s] Best LB:  24659666.09 | Best UB:  25453004.73 | Gap:   3.12%
+[Time: 667.5s] Best LB:  24659666.11 | Best UB:  25453004.73 | Gap:   3.12%
+[Time: 766.5s] Best LB:  24659666.11 | Best UB:  25453004.73 | Gap:   3.12%
+[Time: 836.1s] Best LB:  24662132.54 | Best UB:  25453004.73 | Gap:   3.11%
+[Time: 1014.2s] Best LB:  24662132.54 | Best UB:  25453004.73 | Gap:   3.11%
+[Time: 1105.4s] Best LB:  24662132.54 | Best UB:  25453004.73 | Gap:   3.11%
+[Time: 1215.3s] Best LB:  24666803.42 | Best UB:  25453004.73 | Gap:   3.09%
+[Time: 1483.0s] Best LB:  24666803.42 | Best UB:  25453004.73 | Gap:   3.09%
+[Time: 1681.6s] Best LB:  24666803.42 | Best UB:  25453004.73 | Gap:   3.09%
+[Time: 1762.7s] Best LB:  24666803.42 | Best UB:  25453004.73 | Gap:   3.09%
+[Time: 1818.0s] Best LB:  24666803.42 | Best UB:  25453004.73 | Gap:   3.09%
+[Time: 1818.0s] Best LB:  24669449.58 | Best UB:  25451735.15 | Gap:   3.07%
+[Time: 1818.0s] Best LB:  24669449.58 | Best UB:  25451715.54 | Gap:   3.07%
+[Time: 1818.0s] Best LB:  24669449.58 | Best UB:  25451636.95 | Gap:   3.07%
+[Time: 1818.0s] Best LB:  24669449.58 | Best UB:  25443987.52 | Gap:   3.04%
+[Time: 1860.3s] Best LB:  24669449.58 | Best UB:  25443987.52 | Gap:   3.04%
+[Time: 1860.3s] Best LB:  24669449.58 | Best UB:  25437465.60 | Gap:   3.02%
+[Time: 1860.3s] Best LB:  24669449.58 | Best UB:  25433500.40 | Gap:   3.00%
+[Time: 1892.4s] Best LB:  24669449.58 | Best UB:  25433500.40 | Gap:   3.00%
+[Time: 1929.7s] Best LB:  24669449.58 | Best UB:  25433500.40 | Gap:   3.00%
+[Time: 1929.7s] Best LB:  24669449.58 | Best UB:  25433493.45 | Gap:   3.00%
+[Time: 1953.0s] Best LB:  24669449.58 | Best UB:  25433493.45 | Gap:   3.00%
+[Time: 1979.0s] Best LB:  24669449.58 | Best UB:  25433493.45 | Gap:   3.00%
+[Time: 2019.2s] Best LB:  24669449.58 | Best UB:  25433493.45 | Gap:   3.00%
+[Time: 2068.4s] Best LB:  24669449.58 | Best UB:  25433493.45 | Gap:   3.00%
+[Time: 2115.3s] Best LB:  24669449.58 | Best UB:  25433493.45 | Gap:   3.00%
+[Time: 2171.7s] Best LB:  24669449.58 | Best UB:  25433493.45 | Gap:   3.00%
+[Time: 2231.4s] Best LB:  24672793.64 | Best UB:  25433493.45 | Gap:   2.99%
+[Time: 2271.8s] Best LB:  24672793.64 | Best UB:  25433493.45 | Gap:   2.99%
+[Time: 2320.9s] Best LB:  24672793.64 | Best UB:  25433493.45 | Gap:   2.99%
+[Time: 2379.7s] Best LB:  24678587.71 | Best UB:  25433493.45 | Gap:   2.97%
+[Time: 2439.5s] Best LB:  24678587.71 | Best UB:  25433493.45 | Gap:   2.97%
+[Time: 2681.3s] Best LB:  24678587.71 | Best UB:  25433493.45 | Gap:   2.97%
+[Time: 2949.6s] Best LB:  24678587.71 | Best UB:  25433493.45 | Gap:   2.97%
+[Time: 3002.2s] Best LB:  24678587.71 | Best UB:  25433493.45 | Gap:   2.97%
+[Time: 3054.6s] Best LB:  24698960.69 | Best UB:  25433493.45 | Gap:   2.89%
+[Time: 3111.5s] Best LB:  24698960.69 | Best UB:  25433493.45 | Gap:   2.89%
+[Time: 3173.1s] Best LB:  24698960.69 | Best UB:  25433493.45 | Gap:   2.89%
+[Time: 3231.3s] Best LB:  24701465.51 | Best UB:  25433493.45 | Gap:   2.88%
+[Time: 3281.1s] Best LB:  24701465.51 | Best UB:  25433493.45 | Gap:   2.88%
+[Time: 3333.8s] Best LB:  24717318.14 | Best UB:  25433493.45 | Gap:   2.82%
+[Time: 3388.3s] Best LB:  24791341.34 | Best UB:  25433493.45 | Gap:   2.52%
+[Time: 3441.0s] Best LB:  24798971.85 | Best UB:  25433493.45 | Gap:   2.49%
+[Time: 3485.7s] Best LB:  24798971.85 | Best UB:  25433493.45 | Gap:   2.49%
+[Time: 3535.0s] Best LB:  24828048.45 | Best UB:  25433493.45 | Gap:   2.38%
+[Time: 3585.5s] Best LB:  24849906.85 | Best UB:  25433493.45 | Gap:   2.29%
+
+==================================================
+SP MODEL (RP) RESULT SUMMARY
+ 
+ - Disaster Areas: 129
+ - Candidate CCPs: 10
+ - Hospitals: 16
+ - Scenarios: 5
+ - Time Period: 8
+ - Objective Value:     25433493.45
+ - CPU Time:            3586.13 s
+ - num_vars:            186470
+ - num_constrs:         80058
+ - Nodes:               2548
+ - Iteration:           5427045 (Simplex iterations)
+ - Best UB (Objective): 25433493.45
+ - Best LB (Bound):     25430627.89
+ - Final Gap:           0.0113%
+ - VSS(%)    = 15.3190 %
+ - EVPI(%)   = 2.8536 %
+--------------------------------------------------
+ - First-stage decisions (Here and Now):
+   CCP J01  -> X: 1, Staff(V): 33, Amb(U): 14, MedicalSupply(Y): 644.00
+   CCP J02  -> X: 1, Staff(V): 40, Amb(U): 15, MedicalSupply(Y): 816.00
+   CCP J05  -> X: 1, Staff(V): 40, Amb(U): 13, MedicalSupply(Y): 807.00
+   CCP J06  -> X: 1, Staff(V): 37, Amb(U): 15, MedicalSupply(Y): 734.00
+   CCP J08  -> X: 1, Staff(V): 56, Amb(U): 16, MedicalSupply(Y): 1158.00
+   CCP J09  -> X: 1, Staff(V): 35, Amb(U): 13, MedicalSupply(Y): 690.00
+   CCP J10  -> X: 1, Staff(V): 31, Amb(U): 11, MedicalSupply(Y): 595.00
+--------------------------------------------------
+ - Expected KPIs (probability-weighted across scenarios):
+ - total_demand:                  3444.30
+ - total_transported_to_ccp (FI): 3251.63
+ - total_transferred_to_hospital (FO): 1072.34
+ - total_remaining_disaster_area (RM): 231.37 (all periods summed)
+ - total_waiting_at_ccp (WAT):         0.00 (all periods summed)
+--------------------------------------------------
+ - max_ccp_utilization_%:                100.00 %
+ - max_hospital_utilization_%:           100.00 %
+ - max_road_ij_utilization_%:            100.00 %
+ - max_road_jh_utilization_%:            100.00 %
+ - max_staff_utilization_%:              100.00 %
+ - max_ccp_ambulance_utilization_%:      100.00 %
+ - max_hospital_ambulance_utilization_%:  99.35 %
+==================================================

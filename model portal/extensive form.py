@@ -1,11 +1,23 @@
+"""
+extensive form.py — SP extensive form 入口（Phase R 重構：原 sp model.py，邏輯零改動）
+新增：sys.path bootstrap 指向 model core/；import model_core 改為 extensive_form_core 別名。
+"""
+import sys
 import time
+from pathlib import Path
+
+# ── Phase R bootstrap：讓 model core/ 內的模組可被 import ─────────────────
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+_MODEL_CORE_DIR = str(PROJECT_ROOT / "model core")
+if _MODEL_CORE_DIR not in sys.path:
+    sys.path.insert(0, _MODEL_CORE_DIR)
 
 import gurobipy as gp
 from gurobipy import GRB
 
 import config
 import logging_utils
-import model_core
+import extensive_form_core as model_core
 import vss_evpi
 
 

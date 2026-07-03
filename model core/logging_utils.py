@@ -9,7 +9,9 @@ from typing import Any, Iterable
 import config
 
 
-LOG_DIR = Path("logs")
+# Phase R 重構：logging_utils.py 移入 model core/，LOG_DIR 改以檔案位置定位專案根
+# （原 Path("logs") 相對 cwd）；log 仍寫到專案根的 logs/
+LOG_DIR = Path(__file__).resolve().parents[1] / "logs"
 
 
 class TeeStream:

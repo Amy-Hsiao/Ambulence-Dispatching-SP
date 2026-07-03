@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """
 Uncertainty-source sensitivity batch runner (three axes).
+(Phase R 重構：原 run_sensitivity_spatial.py，僅改路徑——ROOT_DIR 改為專案根、
+ SP 模型路徑指向 model portal/extensive form.py、結果寫入 experiment result/，邏輯零改動)
 
 Axis 1  "spatial_only" : USE_SPATIAL_KMEANS=True,  USE_SCENARIO_OMEGA=False
     Only the K-means spatial demand multipliers are random,
@@ -18,7 +20,6 @@ Axis 3  "both"         : USE_SCENARIO_OMEGA=True,  USE_SPATIAL_KMEANS=True
     each spatial-uncertainty level -> shows interaction of the two sources.
 
 Sweep: d in {0.2, 0.5, 0.7}  ->  ranges [0.8,1.2], [0.5,1.5], [0.3,1.7].
-Anchor d -> 0 equals ablation A for axes 1-2, ablation B for axis 3.
 
 Implementation notes
 --------------------
@@ -58,7 +59,7 @@ AXES = [
     ("both",            True,      True),    # 兩者都開：全局 omega 固定 [0.8,1.2]，掃空間乘數範圍（= 主模型）
 ]
 
-NORMALIZE_SPATIAL = True          # 空間乘數依群集規模加權正規化（僅影響 spatial_only 軸）
+NORMALIZE_SPATIAL = True          # 空間乘數依群集規模加權正規化（僅影響 spatial_only / both 軸）
 
 TIME_LIMIT   = 3600.0
 MIP_GAP      = 0.01
@@ -70,16 +71,18 @@ LOG_SUBDIR_NAME  = "east district stress test"
 # =============================================================================
 # Setup
 # =============================================================================
-ROOT_DIR      = Path(__file__).resolve().parent
+ROOT_DIR      = Path(__file__).resolve().parents[1]   # 專案根（Phase R：原為本檔所在目錄）
 LOG_DIR       = ROOT_DIR / "logs"
 LOG_SUBDIR    = LOG_DIR / LOG_SUBDIR_NAME
-SP_MODEL_PATH = ROOT_DIR / "sp model.py"
-CSV_PATH      = ROOT_DIR / RESULT_CSV_NAME
-XLSX_PATH     = ROOT_DIR / RESULT_XLSX_NAME
+SP_MODEL_PATH = ROOT_DIR / "model portal" / "extensive form.py"
+RESULT_DIR    = ROOT_DIR / "experiment result"
+CSV_PATH      = RESULT_DIR / RESULT_CSV_NAME
+XLSX_PATH     = RESULT_DIR / RESULT_XLSX_NAME
 
 os.chdir(ROOT_DIR)
-if str(ROOT_DIR) not in sys.path:
-    sys.path.insert(0, str(ROOT_DIR))
+for _p in (str(ROOT_DIR / "model core"), str(ROOT_DIR)):
+    if _p not in sys.path:
+        sys.path.insert(0, _p)
 
 import config as cfg  # noqa: E402
 
@@ -154,7 +157,7 @@ def case_id(axis: str, delta: float, seed: int) -> str:
 
 
 def load_existing_rows() -> dict[str, dict[str, Any]]:
-    """Read previous results keyed by test_id (for resume)."""
+    """Read previous results keyed by test_id (kept for ad-hoc analysis; not used by main)."""
     if not CSV_PATH.exists():
         return {}
     with CSV_PATH.open(encoding="utf-8-sig", newline="") as f:
@@ -162,6 +165,7 @@ def load_existing_rows() -> dict[str, dict[str, Any]]:
 
 
 def write_results(rows_by_id: dict[str, dict[str, Any]], order: list[str]) -> None:
+    RESULT_DIR.mkdir(parents=True, exist_ok=True)
     with CSV_PATH.open("w", newline="", encoding="utf-8-sig") as f:
         writer = csv.DictWriter(f, fieldnames=FIELDNAMES, extrasaction="ignore")
         writer.writeheader()
@@ -204,6 +208,7 @@ def export_xlsx(rows_by_id: dict[str, dict[str, Any]], order: list[str]) -> None
         print("  [xlsx] openpyxl 未安裝，略過 Excel 匯出（pip install openpyxl）")
         return
     try:
+        RESULT_DIR.mkdir(parents=True, exist_ok=True)
         wb = Workbook()
         ws = wb.active
         ws.title = "sensitivity"
@@ -490,6 +495,7 @@ def print_final_summary(rows_by_id: dict[str, dict[str, Any]]) -> None:
 # =============================================================================
 def main() -> None:
     LOG_SUBDIR.mkdir(parents=True, exist_ok=True)
+    RESULT_DIR.mkdir(parents=True, exist_ok=True)
     sp_module = load_sp_module()
 
     cases = [(axis, uo, uk, d, s)

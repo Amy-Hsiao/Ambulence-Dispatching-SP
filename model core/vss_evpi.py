@@ -1,5 +1,6 @@
 """
 vss_evpi.py  —  VSS and EVPI computation for the two-stage SP model.
+(Phase R 重構：移入 model core/；import model_core 改為 extensive_form_core，邏輯零改動)
 
 Definitions (cost minimisation):
     RP   = SP extensive-form objective  (solved externally, passed in)
@@ -21,7 +22,7 @@ import gurobipy as gp
 from gurobipy import GRB
 
 import config
-import model_core
+import extensive_form_core as model_core
 
 
 # ------------------------------------------------------------------ #

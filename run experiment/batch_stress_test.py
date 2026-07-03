@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """
 Batch SP experiment runner.
+(Phase R 重構：原 run experiment.py，僅改路徑——ROOT_DIR 改為專案根、
+ SP 模型路徑指向 model portal/extensive form.py、結果 CSV 寫入 experiment result/，邏輯零改動)
 
 This script is only a runner. It temporarily changes values in the imported
 config module while it runs each experiment case, then restores them. It does
@@ -75,14 +77,16 @@ LOG_SUBDIR_NAME = "east district stress test"
 # =============================================================================
 # Setup
 # =============================================================================
-ROOT_DIR      = Path(__file__).resolve().parent
+ROOT_DIR      = Path(__file__).resolve().parents[1]   # 專案根（Phase R：原為本檔所在目錄）
 LOG_DIR       = ROOT_DIR / "logs"
 LOG_SUBDIR    = LOG_DIR / LOG_SUBDIR_NAME
-SP_MODEL_PATH = ROOT_DIR / "sp model.py"
+SP_MODEL_PATH = ROOT_DIR / "model portal" / "extensive form.py"
+RESULT_DIR    = ROOT_DIR / "experiment result"
 
 os.chdir(ROOT_DIR)
-if str(ROOT_DIR) not in sys.path:
-    sys.path.insert(0, str(ROOT_DIR))
+for _p in (str(ROOT_DIR / "model core"), str(ROOT_DIR)):
+    if _p not in sys.path:
+        sys.path.insert(0, _p)
 
 import config as cfg  # noqa: E402
 
@@ -515,7 +519,8 @@ def print_summary(rows: list[dict[str, Any]], csv_path: Path) -> None:
 # =============================================================================
 def main() -> None:
     timestamp = dt.datetime.now().strftime("%Y%m%d_%H%M%S")
-    csv_path  = ROOT_DIR / f"{RESULT_PREFIX}_{EXPERIMENT_AXIS}_{timestamp}.csv"
+    RESULT_DIR.mkdir(parents=True, exist_ok=True)
+    csv_path  = RESULT_DIR / f"{RESULT_PREFIX}_{EXPERIMENT_AXIS}_{timestamp}.csv"
     rows: list[dict[str, Any]] = []
 
     LOG_SUBDIR.mkdir(parents=True, exist_ok=True)

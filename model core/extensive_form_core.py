@@ -1,5 +1,6 @@
 """
-model_core.py  —  shared Gurobi model builder for deterministic and SP models.
+extensive_form_core.py  —  shared Gurobi model builder for deterministic and SP models.
+(Phase R 重構：原 model_core.py，僅改檔名，邏輯零改動)
 
 Both the deterministic baseline and the SP extensive form share identical
 constraint logic; the only difference is the set of scenarios S and their

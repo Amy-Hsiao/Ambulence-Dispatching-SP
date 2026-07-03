@@ -10,7 +10,8 @@ from pathlib import Path
 # ==========================================
 # 參數設定區
 # ==========================================
-DATA_DIR = Path("data")
+# Phase R 重構：config.py 移入 model core/，DATA_DIR 改以檔案位置定位專案根（原 Path("data") 相對 cwd）
+DATA_DIR = Path(__file__).resolve().parents[1] / "data"
 DISASTER_CSV = "east_district_disaster.csv"
 CCP_CSV = "east_district_ccp.csv"
 HOSPITAL_CSV = "east_district_hospital.csv"
@@ -22,11 +23,13 @@ COORDINATE_SYSTEM = "euclidean_m"
 DEMAND_MULTIPLIER = 1.0
 DEMAND_UNIFORM_LOW = 1.0
 DEMAND_UNIFORM_HIGH = 5.0
-SCENARIO_OMEGA_LOW  = 0.8   # 全局情境乘數 下界（縮小，讓空間乘數主導）
+# ── 基礎設定（定案）：Both = 全局 omega [0.8,1.2] + 空間乘數 U[0.5,1.5]（正規化）──
+# 依 sensitivity_uncertainty_results：VSS≈13%、EVPI≈2.9%，結果對空間範圍不敏感（±0.2~±0.7 間 VSS 僅差 2pp）
+SCENARIO_OMEGA_LOW  = 0.8   # 全局情境乘數 下界（災害整體規模 ±20%）
 SCENARIO_OMEGA_HIGH = 1.2   # 全局情境乘數 上界
 SCENARIO_SPATIAL_CLUSTERS   = 3     # 地理群集數（K-means）
-SCENARIO_SPATIAL_OMEGA_LOW  = 0.5   # 群集需求乘數 下界
-SCENARIO_SPATIAL_OMEGA_HIGH = 2.0   # 群集需求乘數 上界
+SCENARIO_SPATIAL_OMEGA_LOW  = 0.5   # 群集需求乘數 下界（原 [0.5,2.0]，2026-07 定案改為 [0.5,1.5]）
+SCENARIO_SPATIAL_OMEGA_HIGH = 1.5   # 群集需求乘數 上界
 NORMALIZE_SPATIAL_OMEGA = True  # True: 空間乘數依群集規模加權正規化(每情境加權平均=1，純重分配不改總量)
 USE_SCENARIO_OMEGA  = True   # [Ablation 開關] True: 每情境抽全局 omega；False: 固定 1.0
 USE_SPATIAL_KMEANS  = True   # [Ablation 開關] True: K-means 空間異質性；False: 不分群
@@ -49,6 +52,15 @@ VSS_EVPI_EV_TIME_LIMIT  = 180.0   # EV：單情境確定性模型
 VSS_EVPI_EEV_TIME_LIMIT = 180.0   # EEV：一階固定後近似 LP，通常數秒
 VSS_EVPI_WS_TIME_LIMIT  = 120.0   # WS：每個情境（原 1200）
 VSS_EVPI_WS_MIP_GAP     = 0.01    # WS gap 與 RP 一致（原 0.0001；gap 不一致會使 EVPI 有偏）
+
+# ── Benders / B&BC 設定（Phase 0；只影響 lshaped 引擎，extensive form 完全不受影響）──
+SOLVER_ENGINE            = "extensive"   # "extensive" | "lshaped"（runner 依此分派求解引擎）
+BENDERS_MULTI_CUT        = True    # False = single-cut（僅供實驗比較，預設恆 True）
+BENDERS_ROOT_CUT_ROUNDS  = 15      # root 節點分數解 user cut 輪數（0 = 關閉 root cuts）
+BENDERS_USE_USER_CUTS    = True    # True: root 節點分數解 user cut
+BENDERS_CUT_VIOL_REL_TOL = 1e-6    # cut 違反判定：Q_s > θ_s + tol·max(1,|Q_s|)
+BENDERS_PARALLEL_ORACLES = 1       # 子問題平行數（1 = 循序；Phase 4 才調大）
+BENDERS_EV_WARM_START    = True    # 用 EV 一階解當 master 初始 incumbent
 
 PERIOD_DURATION_SEC = 1800.0
 ASSUMED_SPEED_MPS = 11.11

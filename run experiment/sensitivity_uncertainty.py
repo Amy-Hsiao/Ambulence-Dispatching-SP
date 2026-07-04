@@ -74,7 +74,6 @@ LOG_SUBDIR_NAME  = "east district stress test"
 ROOT_DIR      = Path(__file__).resolve().parents[1]   # 專案根（Phase R：原為本檔所在目錄）
 LOG_DIR       = ROOT_DIR / "logs"
 LOG_SUBDIR    = LOG_DIR / LOG_SUBDIR_NAME
-SP_MODEL_PATH = ROOT_DIR / "model portal" / "extensive form.py"
 RESULT_DIR    = ROOT_DIR / "experiment result"
 CSV_PATH      = RESULT_DIR / RESULT_CSV_NAME
 XLSX_PATH     = RESULT_DIR / RESULT_XLSX_NAME
@@ -85,6 +84,14 @@ for _p in (str(ROOT_DIR / "model core"), str(ROOT_DIR)):
         sys.path.insert(0, _p)
 
 import config as cfg  # noqa: E402
+
+# ── 求解引擎分派（Phase 5）：config.SOLVER_ENGINE = "extensive" | "lshaped" ──
+_ENGINE_FILE = {
+    "extensive": "extensive form.py",
+    "lshaped":   "benders bbc.py",
+}
+SOLVER_ENGINE = getattr(cfg, "SOLVER_ENGINE", "extensive")
+SP_MODEL_PATH = ROOT_DIR / "model portal" / _ENGINE_FILE.get(SOLVER_ENGINE, "extensive form.py")
 
 # 欄位順序對齊論文 Excel 表
 FIELDNAMES = [
@@ -122,6 +129,12 @@ FIELDNAMES = [
     "log_path",
     "status",
     "note",
+    # ---- B&BC 引擎統計（extensive 引擎時為 NA）----
+    "engine",
+    "lazy_cuts",
+    "user_cuts",
+    "oracle_solves",
+    "callback_time_s",
 ]
 
 
@@ -438,6 +451,19 @@ def run_one_case(sp_module: Any, axis: str, use_omega: bool, use_kmeans: bool,
         "status":      "OK",
         "note":        "; ".join(summary.get("warnings", [])),
     })
+    bbc = summary.get("bbc_stats")
+    if bbc:
+        row.update({
+            "engine":          bbc.get("engine", "bbc"),
+            "lazy_cuts":       bbc.get("lazy_cuts_added", "NA"),
+            "user_cuts":       bbc.get("user_cuts_added", "NA"),
+            "oracle_solves":   bbc.get("oracle_solves", "NA"),
+            "callback_time_s": fmt(bbc.get("callback_time"), 2),
+        })
+        # B&BC 的 CPU Time 以演算法全程 wall time 為準（含 oracle）
+        row["cpu_s"] = fmt(bbc.get("runtime"), 2)
+    else:
+        row["engine"] = "extensive"
     print(f"  OK | VSS%={row['vss_pct']} | EVPI%={row['evpi_pct']} | "
           f"gap={row['gap_pct']}% | open CCPs={n_open}")
     return row
@@ -512,6 +538,7 @@ def main() -> None:
     print(f"Fixed   : S={cfg.SCENARIOS}, T={cfg.TIME_PERIODS}, "
           f"normalize_spatial={NORMALIZE_SPATIAL}")
     print(f"Solver  : time_limit={TIME_LIMIT:.0f}s, mip_gap={MIP_GAP:g}")
+    print(f"Engine  : {SOLVER_ENGINE}  ({SP_MODEL_PATH.name})")
     print(f"Rerun   : all {len(todo)} cases run from scratch (no resume)")
     print(f"Logs    : {LOG_SUBDIR}")
     print(f"Output  : {CSV_PATH}")

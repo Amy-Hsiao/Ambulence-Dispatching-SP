@@ -80,7 +80,6 @@ LOG_SUBDIR_NAME = "east district stress test"
 ROOT_DIR      = Path(__file__).resolve().parents[1]   # 專案根（Phase R：原為本檔所在目錄）
 LOG_DIR       = ROOT_DIR / "logs"
 LOG_SUBDIR    = LOG_DIR / LOG_SUBDIR_NAME
-SP_MODEL_PATH = ROOT_DIR / "model portal" / "extensive form.py"
 RESULT_DIR    = ROOT_DIR / "experiment result"
 
 os.chdir(ROOT_DIR)
@@ -90,30 +89,62 @@ for _p in (str(ROOT_DIR / "model core"), str(ROOT_DIR)):
 
 import config as cfg  # noqa: E402
 
+# ── 求解引擎分派（Phase 5）：config.SOLVER_ENGINE = "extensive" | "lshaped" ──
+_ENGINE_FILE = {
+    "extensive": "extensive form.py",
+    "lshaped":   "benders bbc.py",
+}
+SOLVER_ENGINE = getattr(cfg, "SOLVER_ENGINE", "extensive")
+SP_MODEL_PATH = ROOT_DIR / "model portal" / _ENGINE_FILE.get(SOLVER_ENGINE, "extensive form.py")
+
 
 FIELDNAMES = [
     "test_id",
     "axis",
     "axis_value",
+    "factor",
     "use_omega",
     "use_kmeans",
     "sample_ratio",
     "I", "J", "H", "S", "T",
-    "demand_multiplier",
-    "road_capacity_multiplier",
-    "hospital_capacity_multiplier",
     "obj_value",
+    "first_stage_decision",
     "best_lb",
     "best_ub",
     "cpu_s",
     "wall_s",
+    "num_vars",
+    "num_constrs",
+    "nodes",
+    "iterations",
     "gap_pct",
     "vss_pct",
     "evpi_pct",
+    "demand_multiplier",
+    "road_capacity_multiplier",
+    "hospital_capacity_multiplier",
+    # ---- B&BC 引擎統計（extensive 引擎時為 NA）----
+    "engine",
+    "total_cuts",
+    "lazy_cuts",
+    "user_cuts",
+    "oracle_solves",
+    "callback_time_s",
     "log_path",
     "status",
     "note",
 ]
+
+# 論文表格用的 factor 標籤（比照 Excel 表列名：Scenario x5、Time Period x8 ...）
+AXIS_FACTOR_PREFIX = {
+    "scenario":                     "Scenario x",
+    "time_period":                  "Time Period x",
+    "ccp":                          "CCP x",
+    "sample_ratio":                 "Sample ratio ",
+    "demand_multiplier":            "Demand mult. ",
+    "road_capacity_multiplier":     "Road cap. mult. ",
+    "hospital_capacity_multiplier": "Hosp cap. mult. ",
+}
 
 AXIS_TO_SETTING = {
     "scenario":                     "scenarios",
@@ -166,6 +197,114 @@ def write_results(csv_path: Path, rows: list[dict[str, Any]]) -> None:
         writer = csv.DictWriter(f, fieldnames=FIELDNAMES)
         writer.writeheader()
         writer.writerows(rows)
+
+
+def extract_first_stage(model: Any) -> str:
+    """從回傳的模型（extensive form 完整模型或 B&BC master）讀一階決策字串。"""
+    if model is None:
+        return "NA"
+    xs: dict[str, float] = {}
+    vs: dict[str, float] = {}
+    us: dict[str, float] = {}
+    ys: dict[str, float] = {}
+    try:
+        for var in model.getVars():
+            name = var.VarName
+            if name.startswith("X["):
+                xs[name[2:-1]] = var.X
+            elif name.startswith("V["):
+                vs[name[2:-1]] = var.X
+            elif name.startswith("U["):
+                us[name[2:-1]] = var.X
+            elif name.startswith("Y["):
+                h, j = name[2:-1].split(",")
+                ys[j] = ys.get(j, 0.0) + var.X
+            else:
+                break   # 一階變數在最前面，遇到其他變數即可停
+    except Exception:
+        return "NA"
+    lines = []
+    for j in sorted(xs):
+        if xs[j] > 0.5:
+            lines.append(
+                f"CCP {j:4s} -> X: 1, Staff(V): {vs.get(j, 0):2.0f}, "
+                f"Amb(U): {us.get(j, 0):2.0f}, MedicalSupply(Y): {ys.get(j, 0.0):.2f}"
+            )
+    return "\n".join(lines) if lines else "none opened"
+
+
+# Excel 欄位：18 欄論文表格 + 精選 B&BC 統計（extensive 引擎時為 NA）
+XLSX_COLUMNS = [
+    ("factor",               "factor"),
+    ("|I| Disaster",         "I"),
+    ("|J| CCP",              "J"),
+    ("|H| Hosp",             "H"),
+    ("|S| Scen",             "S"),
+    ("|T| Per",              "T"),
+    ("obj_value",            "obj_value"),
+    ("First Stage Decision", "first_stage_decision"),
+    ("Best LB",              "best_lb"),
+    ("Best UB",              "best_ub"),
+    ("CPU Time(s)",          "cpu_s"),
+    ("num_vars",             "num_vars"),
+    ("num_constrs",          "num_constrs"),
+    ("Nodes",                "nodes"),
+    ("Iteration",            "iterations"),
+    ("Final Gap(%)",         "gap_pct"),
+    ("VSS(%)",               "vss_pct"),
+    ("EVPI(%)",              "evpi_pct"),
+    ("Engine",               "engine"),
+    ("Total Cuts",           "total_cuts"),
+    ("Lazy Cuts",            "lazy_cuts"),
+    ("User Cuts",            "user_cuts"),
+    ("Oracle Solves",        "oracle_solves"),
+    ("Callback Time(s)",     "callback_time_s"),
+]
+
+_XLSX_INT_KEYS = ("I", "J", "H", "S", "T", "num_vars", "num_constrs",
+                  "nodes", "iterations", "total_cuts", "lazy_cuts",
+                  "user_cuts", "oracle_solves")
+
+
+def export_xlsx(rows: list[dict[str, Any]], xlsx_path: Path) -> None:
+    """匯出結果至 xlsx（experiment result/）。CSV 為來源真相；
+    匯出失敗（openpyxl 未裝、檔案被 Excel 開啟）不會中斷實驗。"""
+    try:
+        from openpyxl import Workbook
+        from openpyxl.styles import Alignment, Font, PatternFill
+    except ImportError:
+        print("  [xlsx] openpyxl 未安裝，略過 Excel 匯出（pip install openpyxl）")
+        return
+    try:
+        xlsx_path.parent.mkdir(parents=True, exist_ok=True)
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "results"
+        header_fill = PatternFill("solid", fgColor="2E74B5")
+        header_font = Font(bold=True, color="FFFFFF")
+        for col_idx, (title, _key) in enumerate(XLSX_COLUMNS, start=1):
+            cell = ws.cell(row=1, column=col_idx, value=title)
+            cell.fill = header_fill
+            cell.font = header_font
+            cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+        for r_idx, row in enumerate(rows, start=2):
+            for col_idx, (_title, key) in enumerate(XLSX_COLUMNS, start=1):
+                value = row.get(key, "NA")
+                if key not in ("factor", "first_stage_decision", "engine"):
+                    try:
+                        value = float(value)
+                        if value == int(value) and key in _XLSX_INT_KEYS:
+                            value = int(value)
+                    except (TypeError, ValueError):
+                        pass
+                cell = ws.cell(row=r_idx, column=col_idx, value=value)
+                if key == "first_stage_decision":
+                    cell.alignment = Alignment(wrap_text=True, vertical="top")
+        ws.column_dimensions["A"].width = 22
+        ws.column_dimensions["H"].width = 62   # First Stage Decision
+        wb.save(xlsx_path)
+    except Exception as exc:
+        print(f"  [xlsx] Excel 匯出失敗（不影響 CSV）: {exc}")
 
 
 def snapshot_logs() -> set[Path]:
@@ -385,11 +524,16 @@ def run_one_case(
         label   = fmt_value(axis_value)
         test_id = f"{EXPERIMENT_AXIS}_{label}".replace(".", "p")
 
+    factor = AXIS_FACTOR_PREFIX.get(EXPERIMENT_AXIS, f"{EXPERIMENT_AXIS} ") + str(label)
+    if EXPERIMENT_AXIS == "ablation":
+        factor = f"Ablation {label}"
+
     row = blank_row()
     row.update({
         "test_id":                      test_id,
         "axis":                         EXPERIMENT_AXIS,
         "axis_value":                   label,
+        "factor":                       factor,
         "use_omega":                    str(getattr(cfg, "USE_SCENARIO_OMEGA", "NA")),
         "use_kmeans":                   str(getattr(cfg, "USE_SPATIAL_KMEANS", "NA")),
         "sample_ratio":                 fmt_value(settings["sample_ratio"]),
@@ -449,9 +593,29 @@ def run_one_case(
     row["best_ub"]   = format_float(parsed.get("best_ub"),  digits=2)
     row["best_lb"]   = format_float(parsed.get("best_lb"),  digits=2)
 
+    # 模型維度與樹統計（extensive = 完整模型；lshaped = master，論文表格需註明）
+    row["num_vars"]    = int(safe_model_attr(model, "NumVars") or 0)
+    row["num_constrs"] = int(safe_model_attr(model, "NumConstrs") or 0)
+    row["nodes"]       = int(safe_model_attr(model, "NodeCount") or 0)
+    row["iterations"]  = int(safe_model_attr(model, "IterCount") or 0)
+    row["first_stage_decision"] = extract_first_stage(model)
+
     if summary is not None:
         row["vss_pct"]  = format_float(summary.get("VSS_pct"),  digits=4)
         row["evpi_pct"] = format_float(summary.get("EVPI_pct"), digits=4)
+        bbc = summary.get("bbc_stats")
+        if bbc:
+            row.update({
+                "engine":          bbc.get("engine", "bbc"),
+                "total_cuts":      bbc.get("cuts_added", "NA"),
+                "lazy_cuts":       bbc.get("lazy_cuts_added", "NA"),
+                "user_cuts":       bbc.get("user_cuts_added", "NA"),
+                "oracle_solves":   bbc.get("oracle_solves", "NA"),
+                "callback_time_s": format_float(bbc.get("callback_time"), digits=2),
+            })
+            row["cpu_s"] = format_float(bbc.get("runtime"), digits=2)
+        else:
+            row["engine"] = "extensive"
     # log 裡也有 VSS/EVPI，parse_log_summary 已經抓進 parsed
     if "vss_pct" in parsed and row["vss_pct"] == "NA":
         row["vss_pct"]  = format_float(parsed["vss_pct"],  digits=4)
@@ -492,6 +656,7 @@ def print_header(csv_path: Path) -> None:
           f"  USE_SPATIAL_KMEANS={getattr(cfg,'USE_SPATIAL_KMEANS','?')}")
     print(f"Solver : time_limit={TIME_LIMIT:.0f}s  mip_gap={MIP_GAP:g}"
           f"  stop_if_gap>{GAP_STOP_PCT}%")
+    print(f"Engine : {SOLVER_ENGINE}  ({SP_MODEL_PATH.name})")
     print(f"Log dir: {LOG_SUBDIR}")
     print(f"Output : {csv_path}")
     print("=" * 80)
@@ -521,12 +686,14 @@ def main() -> None:
     timestamp = dt.datetime.now().strftime("%Y%m%d_%H%M%S")
     RESULT_DIR.mkdir(parents=True, exist_ok=True)
     csv_path  = RESULT_DIR / f"{RESULT_PREFIX}_{EXPERIMENT_AXIS}_{timestamp}.csv"
+    xlsx_path = RESULT_DIR / f"{RESULT_PREFIX}_{EXPERIMENT_AXIS}_{timestamp}.xlsx"
     rows: list[dict[str, Any]] = []
 
     LOG_SUBDIR.mkdir(parents=True, exist_ok=True)
 
     sp_module = load_sp_module()
     print_header(csv_path)
+    print(f"Excel  : {xlsx_path}")
 
     cases = ABLATION_CASES if EXPERIMENT_AXIS == "ablation" else EXPERIMENT_VALUES
     for run_idx, axis_value in enumerate(cases, start=1):
@@ -546,6 +713,7 @@ def main() -> None:
 
         rows.append(row)
         write_results(csv_path, rows)
+        export_xlsx(rows, xlsx_path)   # 每組跑完即同步 Excel（experiment result/）
 
         if row["status"] == "STOP" and STOP_ON_ERROR:
             remaining = [

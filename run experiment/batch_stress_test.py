@@ -96,7 +96,7 @@ _ENGINE_FILE = {
     "extensive": "extensive form.py",
     "lshaped":   "benders bbc.py",
 }
-SOLVER_ENGINE = getattr(cfg, "SOLVER_ENGINE", "extensive")
+SOLVER_ENGINE = getattr(cfg, "SOLVER_ENGINE", "lshaped")
 SP_MODEL_PATH = ROOT_DIR / "model portal" / _ENGINE_FILE.get(SOLVER_ENGINE, "extensive form.py")
 
 

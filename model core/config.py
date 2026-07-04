@@ -52,6 +52,9 @@ VSS_EVPI_EV_TIME_LIMIT  = 180.0   # EV：單情境確定性模型
 VSS_EVPI_EEV_TIME_LIMIT = 180.0   # EEV：一階固定後近似 LP，通常數秒
 VSS_EVPI_WS_TIME_LIMIT  = 120.0   # WS：每個情境（原 1200）
 VSS_EVPI_WS_MIP_GAP     = 0.01    # WS gap 與 RP 一致（原 0.0001；gap 不一致會使 EVPI 有偏）
+# 大 S 加速（定義不變）：EEV 依情境分解成單情境 LP（數學等價）；WS/EEV 情境平行求解
+VSS_EVPI_DECOMPOSE_EEV     = True  # True: EEV = Σ p_s·(固定x_EV的單情境目標)，逐情境計算
+VSS_EVPI_PARALLEL_WORKERS  = 6     # WS/EEV 同時求解的情境數（1 = 循序，行為同舊版）
 
 # ── Benders / B&BC 設定（Phase 0；只影響 lshaped 引擎，extensive form 完全不受影響）──
 SOLVER_ENGINE            = "extensive"   # "extensive" | "lshaped"（runner 依此分派求解引擎）

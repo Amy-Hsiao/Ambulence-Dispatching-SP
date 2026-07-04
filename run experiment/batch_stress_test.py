@@ -40,8 +40,10 @@ from typing import Any
 # =============================================================================
 
 # ── Experiment axis ──────────────────────────────────────────────────────────
+# 情境規模實驗（Phase 6）：固定基礎設定（全局 omega [0.8,1.2]、空間 U[0.5,1.5] 正規化、
+# kmeans+omega 皆開、T=8），只掃情境數，比較求解速度；Final Gap > GAP_STOP_PCT 即早停
 EXPERIMENT_AXIS   = "scenario"
-EXPERIMENT_VALUES = [5, 20, 30, 50, 75, 100]
+EXPERIMENT_VALUES = [5, 20, 30, 50, 100, 150]
 
 # ── Ablation cases (only used when EXPERIMENT_AXIS == "ablation") ────────────
 ABLATION_CASES = [

@@ -15,7 +15,9 @@ Theoretical ordering: WS <= RP <= EEV
 """
 from __future__ import annotations
 
+import os
 import time
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 import gurobipy as gp
@@ -120,6 +122,91 @@ def _solve_sub(
     return best_lb, best_ub, gap, m, v
 
 
+def _scenario_job(instance, s, time_limit, mip_gap,
+                  fixed_first_stage=None, warm_start_first_stage=None,
+                  threads=1):
+    """單一情境的獨立求解工作（供 ThreadPool 平行呼叫）。
+
+    每個工作使用自己的 Gurobi 環境（Gurobi 的執行緒安全要求），
+    模型/定義與 _solve_sub 循序版完全相同。回傳 (best_lb, best_ub, gap)；
+    無解時回傳 (None, None, None)。
+    """
+    sets = instance["sets"]
+    sd_full = instance["scenario_data"]
+    sub_det = {
+        "demand":                      sd_full["demand"][s],
+        "road_availability_ij":        sd_full["road_availability_ij"][s],
+        "road_availability_jh":        sd_full["road_availability_jh"][s],
+        "hospital_receiving_capacity": sd_full["hospital_receiving_capacity"][s],
+    }
+    sub_sd = model_core.wrap_det_scenario(sub_det, s)
+
+    env = gp.Env(empty=True)
+    env.setParam("OutputFlag", 0)
+    env.start()
+    try:
+        m, v = model_core.build_gurobi_model(
+            sets["I"], sets["J"], sets["H"], sets["L"], sets["L_transfer"],
+            sets["T"], [s],
+            instance["deterministic_parameters"], sub_sd, {s: 1.0},
+            instance["road_capacity"]["cap_ij"],
+            instance["road_capacity"]["cap_jh"],
+            instance["transport_cost"]["cost_ij"],
+            instance["transport_cost"]["cost_jh"],
+            model_name=f"job[{s}]",
+            time_limit=time_limit,
+            mip_gap=mip_gap,
+            fixed_first_stage=fixed_first_stage,
+            env=env,
+        )
+        m.setParam("Threads", max(1, int(threads)))
+        if warm_start_first_stage is not None and fixed_first_stage is None:
+            try:
+                J, H = sets["J"], sets["H"]
+                for j in J:
+                    v["X"][j].Start = warm_start_first_stage["X"][j]
+                    v["V"][j].Start = warm_start_first_stage["V"][j]
+                    v["U"][j].Start = warm_start_first_stage["U"][j]
+                for h in H:
+                    for j in J:
+                        v["Y"][h, j].Start = warm_start_first_stage["Y"][(h, j)]
+            except (KeyError, TypeError):
+                pass
+        m.optimize()
+        if m.SolCount > 0 and m.status in (GRB.OPTIMAL, GRB.TIME_LIMIT):
+            out = (m.ObjBound, m.ObjVal, m.MIPGap * 100)
+        else:
+            out = (None, None, None)
+        m.dispose()
+        return out
+    finally:
+        env.dispose()
+
+
+def _run_scenario_jobs(instance, S_selected, time_limit, mip_gap,
+                       fixed_first_stage=None, warm_start_first_stage=None):
+    """依 VSS_EVPI_PARALLEL_WORKERS 平行（或循序）解一批單情境問題。"""
+    workers = max(1, int(getattr(config, "VSS_EVPI_PARALLEL_WORKERS", 1)))
+    workers = min(workers, len(S_selected))
+    threads_each = max(1, (os.cpu_count() or 4) // workers)
+
+    if workers == 1:
+        return {
+            s: _scenario_job(instance, s, time_limit, mip_gap,
+                             fixed_first_stage, warm_start_first_stage,
+                             threads=threads_each)
+            for s in S_selected
+        }
+    with ThreadPoolExecutor(max_workers=workers) as ex:
+        futures = {
+            s: ex.submit(_scenario_job, instance, s, time_limit, mip_gap,
+                         fixed_first_stage, warm_start_first_stage,
+                         threads_each)
+            for s in S_selected
+        }
+        return {s: f.result() for s, f in futures.items()}
+
+
 # ------------------------------------------------------------------ #
 # Public API                                                           #
 # ------------------------------------------------------------------ #
@@ -214,19 +301,34 @@ def compute_vss_evpi(
     # ------------------------------------------------------------------ #
     eev_lb = eev_ub = eev_gap = None
     if ev_first_stage is not None:
-        eev_sd = {
-            "demand":                      {s: sd_full["demand"][s]                      for s in S_selected},
-            "road_availability_ij":        {s: sd_full["road_availability_ij"][s]        for s in S_selected},
-            "road_availability_jh":        {s: sd_full["road_availability_jh"][s]        for s in S_selected},
-            "hospital_receiving_capacity": {s: sd_full["hospital_receiving_capacity"][s] for s in S_selected},
-        }
-        eev_lb, eev_ub, eev_gap, _, _ = _solve_sub(
-            "EEV", I, J, H, L, L_tr, T, S_selected,
-            params, eev_sd, norm_probs,
-            cap_ij, cap_jh, cost_ij, cost_jh,
-            eev_time_limit, mip_gap,
-            fixed_first_stage=ev_first_stage,
-        )
+        if getattr(config, "VSS_EVPI_DECOMPOSE_EEV", False):
+            # 分解計算（數學等價）：一階固定後各情境獨立，
+            # EEV = Σ p_s · obj_s(x_EV)，其中 obj_s 已含一階成本 F(x_EV)
+            #（Σ p_s = 1，故 F 的權重和恰為 1，與整體 EEV 完全相同）。
+            eev_jobs = _run_scenario_jobs(
+                instance, S_selected, eev_time_limit, mip_gap,
+                fixed_first_stage=ev_first_stage,
+            )
+            if all(r[1] is not None for r in eev_jobs.values()):
+                eev_ub = sum(norm_probs[s] * eev_jobs[s][1] for s in S_selected)
+                eev_lb = sum(norm_probs[s] * eev_jobs[s][0] for s in S_selected)
+                eev_gap = (
+                    (eev_ub - eev_lb) / abs(eev_ub) * 100 if abs(eev_ub) > 1e-9 else 0.0
+                )
+        else:
+            eev_sd = {
+                "demand":                      {s: sd_full["demand"][s]                      for s in S_selected},
+                "road_availability_ij":        {s: sd_full["road_availability_ij"][s]        for s in S_selected},
+                "road_availability_jh":        {s: sd_full["road_availability_jh"][s]        for s in S_selected},
+                "hospital_receiving_capacity": {s: sd_full["hospital_receiving_capacity"][s] for s in S_selected},
+            }
+            eev_lb, eev_ub, eev_gap, _, _ = _solve_sub(
+                "EEV", I, J, H, L, L_tr, T, S_selected,
+                params, eev_sd, norm_probs,
+                cap_ij, cap_jh, cost_ij, cost_jh,
+                eev_time_limit, mip_gap,
+                fixed_first_stage=ev_first_stage,
+            )
     else:
         pass
 
@@ -237,25 +339,14 @@ def compute_vss_evpi(
     ws_ub_weighted = 0.0
     ws_feasible    = True
 
+    # WS：各情境獨立的單情境 MIP，依 VSS_EVPI_PARALLEL_WORKERS 平行求解
+    #（EV warm start 只是 MIP 初始解，不影響最優解定義）
+    ws_jobs = _run_scenario_jobs(
+        instance, S_selected, ws_time_limit, ws_mip_gap,
+        warm_start_first_stage=ev_first_stage,
+    )
     for s in S_selected:
-        ws_s_det = {
-            "demand":                      sd_full["demand"][s],
-            "road_availability_ij":        sd_full["road_availability_ij"][s],
-            "road_availability_jh":        sd_full["road_availability_jh"][s],
-            "hospital_receiving_capacity": sd_full["hospital_receiving_capacity"][s],
-        }
-        ws_sd    = model_core.wrap_det_scenario(ws_s_det, s)
-        ws_probs = {s: 1.0}
-        ws_S     = [s]
-
-        lb_s, ub_s, gap_s, _, _ = _solve_sub(
-            f"WS[{s}]", I, J, H, L, L_tr, T, ws_S,
-            params, ws_sd, ws_probs,
-            cap_ij, cap_jh, cost_ij, cost_jh,
-            ws_time_limit, ws_mip_gap,
-            warm_start_first_stage=ev_first_stage,  # MIP start 加速收斂，不影響最優解定義
-        )
-
+        lb_s, ub_s, gap_s = ws_jobs[s]
         ws_scenario_results[s] = {
             "best_lb": lb_s,
             "best_ub": ub_s,

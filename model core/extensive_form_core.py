@@ -43,6 +43,7 @@ def build_gurobi_model(
     time_limit: float = 3600.0,
     mip_gap: float = 0.01,
     fixed_first_stage: dict[str, Any] | None = None,
+    env: gp.Env | None = None,
 ) -> tuple[gp.Model, dict[str, Any]]:
     """Build and return a (model, vars_dict) pair.
 
@@ -53,8 +54,11 @@ def build_gurobi_model(
         supplied values by setting lb == ub.  Used for EEV evaluation.
         Expected keys: "X" ({j: 0|1}), "V" ({j: int}), "U" ({j: int}),
                        "Y" ({(h, j): int}).
+    env
+        Optional dedicated Gurobi environment（平行求解時每執行緒各一個）。
+        None = 預設環境，行為與舊版完全相同。純管線參數，不影響模型邏輯。
     """
-    model = gp.Model(model_name)
+    model = gp.Model(model_name, env=env) if env is not None else gp.Model(model_name)
     model.setParam("OutputFlag", 0)
     model.setParam("TimeLimit", time_limit)
     model.setParam("MIPGap", mip_gap)

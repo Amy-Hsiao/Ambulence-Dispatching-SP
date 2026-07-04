@@ -128,8 +128,16 @@ FIELDNAMES = [
     # ---- B&BC 引擎統計（extensive 引擎時為 NA）----
     "engine",
     "total_cuts",
+    "seed_cuts",
     "lazy_cuts",
     "user_cuts",
+    "root_seed_iters",
+    "root_seed_iters_done",
+    "root_cut_rounds",
+    "root_cut_rounds_done",
+    "parallel_oracles",
+    "cache_hits",
+    "cache_misses",
     "oracle_solves",
     "callback_time_s",
     "log_path",
@@ -257,15 +265,24 @@ XLSX_COLUMNS = [
     ("EVPI(%)",              "evpi_pct"),
     ("Engine",               "engine"),
     ("Total Cuts",           "total_cuts"),
+    ("Seed Cuts",            "seed_cuts"),
     ("Lazy Cuts",            "lazy_cuts"),
     ("User Cuts",            "user_cuts"),
+    ("Root Seed Iters",      "root_seed_iters_done"),
+    ("Root Cut Rounds",      "root_cut_rounds_done"),
+    ("Parallel Oracles",     "parallel_oracles"),
+    ("Cache Hits",           "cache_hits"),
+    ("Cache Misses",         "cache_misses"),
     ("Oracle Solves",        "oracle_solves"),
     ("Callback Time(s)",     "callback_time_s"),
 ]
 
 _XLSX_INT_KEYS = ("I", "J", "H", "S", "T", "num_vars", "num_constrs",
                   "nodes", "iterations", "total_cuts", "lazy_cuts",
-                  "user_cuts", "oracle_solves")
+                  "seed_cuts", "user_cuts", "root_seed_iters",
+                  "root_seed_iters_done", "root_cut_rounds",
+                  "root_cut_rounds_done", "parallel_oracles",
+                  "cache_hits", "cache_misses", "oracle_solves")
 
 
 def export_xlsx(rows: list[dict[str, Any]], xlsx_path: Path) -> None:
@@ -608,12 +625,20 @@ def run_one_case(
         bbc = summary.get("bbc_stats")
         if bbc:
             row.update({
-                "engine":          bbc.get("engine", "bbc"),
-                "total_cuts":      bbc.get("cuts_added", "NA"),
-                "lazy_cuts":       bbc.get("lazy_cuts_added", "NA"),
-                "user_cuts":       bbc.get("user_cuts_added", "NA"),
-                "oracle_solves":   bbc.get("oracle_solves", "NA"),
-                "callback_time_s": format_float(bbc.get("callback_time"), digits=2),
+                "engine":                bbc.get("engine", "bbc"),
+                "total_cuts":            bbc.get("cuts_added", "NA"),
+                "seed_cuts":             bbc.get("seed_cuts_added", "NA"),
+                "lazy_cuts":             bbc.get("lazy_cuts_added", "NA"),
+                "user_cuts":             bbc.get("user_cuts_added", "NA"),
+                "root_seed_iters":       bbc.get("root_seed_iters", "NA"),
+                "root_seed_iters_done":  bbc.get("root_seed_iters_done", "NA"),
+                "root_cut_rounds":       bbc.get("root_cut_rounds", "NA"),
+                "root_cut_rounds_done":  bbc.get("root_cut_rounds_done", "NA"),
+                "parallel_oracles":      bbc.get("parallel_oracles", "NA"),
+                "cache_hits":            bbc.get("cache_hits", "NA"),
+                "cache_misses":          bbc.get("cache_misses", "NA"),
+                "oracle_solves":         bbc.get("oracle_solves", "NA"),
+                "callback_time_s":       format_float(bbc.get("callback_time"), digits=2),
             })
             row["cpu_s"] = format_float(bbc.get("runtime"), digits=2)
         else:

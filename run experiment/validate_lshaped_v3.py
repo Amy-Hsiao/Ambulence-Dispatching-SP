@@ -117,7 +117,9 @@ def main():
         S1,
         time_limit=TIME_LIMIT,
         mip_gap=MIP_GAP,
+        root_seed_iters=5,
         root_cut_rounds=5,
+        parallel_oracles=min(5, len(S1)),
         use_user_cuts=True,
         ev_warm_start=True,
         verbose=True,
@@ -158,7 +160,9 @@ def main():
         S5,
         time_limit=TIME_LIMIT,
         mip_gap=MIP_GAP,
+        root_seed_iters=5,
         root_cut_rounds=5,
+        parallel_oracles=min(5, len(S5)),
         use_user_cuts=True,
         ev_warm_start=True,
         verbose=True,
@@ -177,14 +181,23 @@ def main():
         bbc5["cuts_added"] >= 0
         and bbc5["oracle_solves"] > 0
         and bbc5["callback_time"] >= 0.0
+        and bbc5["seed_cuts_added"] >= 0
+        and bbc5["root_seed_iters"] == 5
+        and bbc5["root_seed_iters_done"] >= 0
         and bbc5["root_cut_rounds"] == 5
+        and bbc5["parallel_oracles"] == min(5, len(S5))
+        and bbc5["cache_hits"] >= 0
+        and bbc5["cache_misses"] >= 0
     )
     results.append((
         "V3d B&BC records cut/oracle/callback statistics",
         ok,
         f"cuts={bbc5['cuts_added']} user_cuts={bbc5['user_cuts_added']} "
-        f"lazy_cuts={bbc5['lazy_cuts_added']} rootCutRounds={bbc5['root_cut_rounds_done']}/"
-        f"{bbc5['root_cut_rounds']} oracle_solves={bbc5['oracle_solves']} "
+        f"lazy_cuts={bbc5['lazy_cuts_added']} seed_cuts={bbc5['seed_cuts_added']} "
+        f"rootSeedIters={bbc5['root_seed_iters_done']}/{bbc5['root_seed_iters']} "
+        f"rootCutRounds={bbc5['root_cut_rounds_done']}/{bbc5['root_cut_rounds']} "
+        f"parallel_oracles={bbc5['parallel_oracles']} oracle_solves={bbc5['oracle_solves']} "
+        f"cache_hits={bbc5['cache_hits']} cache_misses={bbc5['cache_misses']} "
         f"callback_time={bbc5['callback_time']:.2f}s",
     ))
 

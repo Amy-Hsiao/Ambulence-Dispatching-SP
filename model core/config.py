@@ -59,10 +59,11 @@ VSS_EVPI_PARALLEL_WORKERS  = 6     # WS/EEV 同時求解的情境數（1 = 循�
 # ── Benders / B&BC 設定（Phase 0；只影響 lshaped 引擎，extensive form 完全不受影響）──
 SOLVER_ENGINE            = "lshaped"     # "extensive" | "lshaped"（runner 依此分派求解引擎）
 BENDERS_MULTI_CUT        = True    # False = single-cut（僅供實驗比較，預設恆 True）
-BENDERS_ROOT_CUT_ROUNDS  = 15      # root 節點分數解 user cut 輪數（0 = 關閉 root cuts）
+BENDERS_ROOT_SEED_ITERS  = 15      # 正式 B&C 前，LP 鬆弛 master 的 ordinary cut 墊切輪數
+BENDERS_ROOT_CUT_ROUNDS  = 15      # root 節點 callback 分數解 user cut 輪數（0 = 關閉 root cuts）
 BENDERS_USE_USER_CUTS    = True    # True: root 節點分數解 user cut
 BENDERS_CUT_VIOL_REL_TOL = 1e-6    # cut 違反判定：Q_s > θ_s + tol·max(1,|Q_s|)
-BENDERS_PARALLEL_ORACLES = 1       # 子問題平行數（1 = 循序；Phase 4 才調大）
+BENDERS_PARALLEL_ORACLES = 5       # B&BC callback/root seeding 情境 oracle 平行數（1 = 循序）
 BENDERS_EV_WARM_START    = True    # 用 EV 一階解當 master 初始 incumbent
 
 PERIOD_DURATION_SEC = 1800.0

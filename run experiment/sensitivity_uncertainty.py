@@ -131,8 +131,17 @@ FIELDNAMES = [
     "note",
     # ---- B&BC 引擎統計（extensive 引擎時為 NA）----
     "engine",
+    "total_cuts",
+    "seed_cuts",
     "lazy_cuts",
     "user_cuts",
+    "root_seed_iters",
+    "root_seed_iters_done",
+    "root_cut_rounds",
+    "root_cut_rounds_done",
+    "parallel_oracles",
+    "cache_hits",
+    "cache_misses",
     "oracle_solves",
     "callback_time_s",
 ]
@@ -454,11 +463,20 @@ def run_one_case(sp_module: Any, axis: str, use_omega: bool, use_kmeans: bool,
     bbc = summary.get("bbc_stats")
     if bbc:
         row.update({
-            "engine":          bbc.get("engine", "bbc"),
-            "lazy_cuts":       bbc.get("lazy_cuts_added", "NA"),
-            "user_cuts":       bbc.get("user_cuts_added", "NA"),
-            "oracle_solves":   bbc.get("oracle_solves", "NA"),
-            "callback_time_s": fmt(bbc.get("callback_time"), 2),
+            "engine":                bbc.get("engine", "bbc"),
+            "total_cuts":            bbc.get("cuts_added", "NA"),
+            "seed_cuts":             bbc.get("seed_cuts_added", "NA"),
+            "lazy_cuts":             bbc.get("lazy_cuts_added", "NA"),
+            "user_cuts":             bbc.get("user_cuts_added", "NA"),
+            "root_seed_iters":       bbc.get("root_seed_iters", "NA"),
+            "root_seed_iters_done":  bbc.get("root_seed_iters_done", "NA"),
+            "root_cut_rounds":       bbc.get("root_cut_rounds", "NA"),
+            "root_cut_rounds_done":  bbc.get("root_cut_rounds_done", "NA"),
+            "parallel_oracles":      bbc.get("parallel_oracles", "NA"),
+            "cache_hits":            bbc.get("cache_hits", "NA"),
+            "cache_misses":          bbc.get("cache_misses", "NA"),
+            "oracle_solves":         bbc.get("oracle_solves", "NA"),
+            "callback_time_s":       fmt(bbc.get("callback_time"), 2),
         })
         # B&BC 的 CPU Time 以演算法全程 wall time 為準（含 oracle）
         row["cpu_s"] = fmt(bbc.get("runtime"), 2)

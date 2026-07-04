@@ -59,12 +59,21 @@ VSS_EVPI_PARALLEL_WORKERS  = 6     # WS/EEV 同時求解的情境數（1 = 循�
 # ── Benders / B&BC 設定（Phase 0；只影響 lshaped 引擎，extensive form 完全不受影響）──
 SOLVER_ENGINE            = "lshaped"     # "extensive" | "lshaped"（runner 依此分派求解引擎）
 BENDERS_MULTI_CUT        = True    # False = single-cut（僅供實驗比較，預設恆 True）
-BENDERS_ROOT_SEED_ITERS  = 15      # 正式 B&C 前，LP 鬆弛 master 的 ordinary cut 墊切輪數
+BENDERS_ROOT_SEED_ITERS  = 300     # 正式 B&C 前，LP 鬆弛 master 的 ordinary cut 墊切輪數上限
+BENDERS_ROOT_SEED_ADAPTIVE = True  # True: LB 停滯即提前停止 root seeding
+BENDERS_ROOT_SEED_STALL_ROUNDS = 5 # seeded LB 連續停滯幾輪後停止
+BENDERS_ROOT_SEED_LB_ABS_TOL = 1e-3   # seeded LB 改善小於此值視為停滯
+BENDERS_ROOT_SEED_LB_REL_TOL = 1e-5   # seeded LB 相對改善小於此值視為停滯
 BENDERS_ROOT_CUT_ROUNDS  = 15      # root 節點 callback 分數解 user cut 輪數（0 = 關閉 root cuts）
 BENDERS_USE_USER_CUTS    = True    # True: root 節點分數解 user cut
 BENDERS_CUT_VIOL_REL_TOL = 1e-6    # cut 違反判定：Q_s > θ_s + tol·max(1,|Q_s|)
 BENDERS_PARALLEL_ORACLES = 5       # B&BC callback/root seeding 情境 oracle 平行數（1 = 循序）
 BENDERS_EV_WARM_START    = True    # 用 EV 一階解當 master 初始 incumbent
+BENDERS_MIPFOCUS         = 3       # 3 = 強化 bound；None = 不覆寫 Gurobi 預設
+BENDERS_HEURISTICS       = 0.02    # 啟發式時間比例；None = 不覆寫 Gurobi 預設
+BENDERS_NUMERIC_FOCUS    = 1       # None = 不覆寫 Gurobi 預設
+BENDERS_X_BRANCH_PRIORITY_ENABLED = True
+BENDERS_X_BRANCH_PRIORITY = 10     # 只給 X[j] 設 branching priority；0 = 無優先權
 
 PERIOD_DURATION_SEC = 1800.0
 ASSUMED_SPEED_MPS = 11.11

@@ -172,9 +172,16 @@ def _run(scenario_size, sample_ratio, time_limit, mip_gap, compute_kpis):
             ("time_limit", time_limit),
             ("mip_gap", mip_gap),
             ("multi_cut", config.BENDERS_MULTI_CUT),
-            ("root_cut_rounds", getattr(config, "BENDERS_ROOT_SEED_ITERS", 0)),
+            ("root_seed_iters", getattr(config, "BENDERS_ROOT_SEED_ITERS", 0)),
+            ("root_seed_adaptive", getattr(config, "BENDERS_ROOT_SEED_ADAPTIVE", True)),
+            ("root_seed_stall_rounds", getattr(config, "BENDERS_ROOT_SEED_STALL_ROUNDS", "NA")),
+            ("root_cut_rounds", getattr(config, "BENDERS_ROOT_CUT_ROUNDS", 0)),
             ("use_user_cuts", getattr(config, "BENDERS_USE_USER_CUTS", False)),
             ("ev_warm_start", getattr(config, "BENDERS_EV_WARM_START", True)),
+            ("mip_focus", getattr(config, "BENDERS_MIPFOCUS", "default")),
+            ("heuristics", getattr(config, "BENDERS_HEURISTICS", "default")),
+            ("x_branch_priority_enabled", getattr(config, "BENDERS_X_BRANCH_PRIORITY_ENABLED", False)),
+            ("x_branch_priority", getattr(config, "BENDERS_X_BRANCH_PRIORITY", 0)),
         ),
     )
 
@@ -217,6 +224,12 @@ def _run(scenario_size, sample_ratio, time_limit, mip_gap, compute_kpis):
         "cuts_added":           result.get("cuts_added"),
         "lazy_cuts_added":      result.get("lazy_cuts_added"),
         "user_cuts_added":      result.get("user_cuts_added"),
+        "seed_cuts_added":      result.get("seed_cuts_added"),
+        "root_seed_iters_done": result.get("root_seed_iters_done"),
+        "root_seed_iters":      result.get("root_seed_iters"),
+        "root_seed_lb":         result.get("root_seed_lb"),
+        "root_seed_stop_reason": result.get("root_seed_stop_reason"),
+        "root_seed_time":       result.get("root_seed_time"),
         "root_cut_rounds_done": result.get("root_cut_rounds_done"),
         "root_cut_rounds":      result.get("root_cut_rounds"),
         "use_user_cuts":        result.get("use_user_cuts"),
@@ -293,6 +306,9 @@ def _run(scenario_size, sample_ratio, time_limit, mip_gap, compute_kpis):
     print(f" - solver_status:        {st['solver_status']}")
     print(f" - multi_cut:            {st['multi_cut']}")
     print(f" - total_cuts:           {st['cuts_added']}")
+    print(f" - seed_cuts:            {st['seed_cuts_added']} (root seed {st['root_seed_iters_done']}/{st['root_seed_iters']})")
+    print(f" - seeded_LB:            {st['root_seed_lb']}")
+    print(f" - root_seed_stop:       {st['root_seed_stop_reason']} ({st['root_seed_time']:.2f} s)")
     print(f" - lazy_cuts:            {st['lazy_cuts_added']}")
     print(f" - user_cuts:            {st['user_cuts_added']} (root rounds {st['root_cut_rounds_done']}/{st['root_cut_rounds']})")
     print(f" - oracle_solves:        {st['oracle_solves']}")

@@ -644,8 +644,20 @@ def solve_bbc(
     )
     master.setParam("LazyConstraints", 1)
     master.setParam("PreCrush", 1)
-    master.setParam("MIPFocus", 1)
-    master.setParam("NumericFocus", 1)
+    mip_focus = getattr(config, "BENDERS_MIPFOCUS", None)
+    if mip_focus is not None:
+        master.setParam("MIPFocus", int(mip_focus))
+    heuristics = getattr(config, "BENDERS_HEURISTICS", None)
+    if heuristics is not None:
+        master.setParam("Heuristics", float(heuristics))
+    numeric_focus = getattr(config, "BENDERS_NUMERIC_FOCUS", None)
+    if numeric_focus is not None:
+        master.setParam("NumericFocus", int(numeric_focus))
+
+    x_branch_priority = int(getattr(config, "BENDERS_X_BRANCH_PRIORITY", 0))
+    if getattr(config, "BENDERS_X_BRANCH_PRIORITY_ENABLED", False) and x_branch_priority > 0:
+        for var in mv["X"].values():
+            var.BranchPriority = x_branch_priority
 
     oracle_envs: dict[str, gp.Env] = {}
     if parallel_oracles > 1:
@@ -682,6 +694,8 @@ def solve_bbc(
     root_cut_rounds_done = 0
     callback_time = 0.0
     root_seed_time = 0.0
+    root_seed_lb = None
+    root_seed_stop_reason = "not_run"
     cache_hits = 0
     cache_misses = 0
     last_progress_print = start_time
@@ -787,10 +801,19 @@ def solve_bbc(
 
     def run_root_seeding() -> None:
         nonlocal cuts_added, seed_cuts_added, root_seed_iters_done, root_seed_time
+        nonlocal root_seed_lb, root_seed_stop_reason
         if root_seed_iters <= 0:
+            root_seed_stop_reason = "disabled"
             return
 
         seed_start = time.time()
+        adaptive_seed = bool(getattr(config, "BENDERS_ROOT_SEED_ADAPTIVE", True))
+        stall_limit = max(1, int(getattr(config, "BENDERS_ROOT_SEED_STALL_ROUNDS", 5)))
+        lb_abs_tol = float(getattr(config, "BENDERS_ROOT_SEED_LB_ABS_TOL", 1e-3))
+        lb_rel_tol = float(getattr(config, "BENDERS_ROOT_SEED_LB_REL_TOL", 1e-5))
+        best_seed_lb = -float("inf")
+        stall_rounds = 0
+        cuts_added_after_last_lp = False
         original_vtypes: list[tuple[gp.Var, str]] = []
         for j in J:
             original_vtypes.append((mv["X"][j], GRB.BINARY))
@@ -807,19 +830,53 @@ def solve_bbc(
 
             if verbose:
                 print("=" * 70)
-                print(f"B&BC ROOT SEEDING ({root_seed_iters} LP iterations)")
+                mode = "adaptive" if adaptive_seed else "fixed"
+                print(f"B&BC ROOT SEEDING ({mode}, max {root_seed_iters} LP iterations)")
                 print("=" * 70)
 
             for iter_no in range(1, root_seed_iters + 1):
                 remaining = time_limit - (time.time() - start_time)
                 if remaining <= 1.0:
+                    root_seed_stop_reason = "time_limit"
                     break
                 master.setParam("TimeLimit", max(1.0, remaining))
                 master.optimize()
                 if master.SolCount == 0:
+                    root_seed_stop_reason = "no_lp_solution"
                     break
                 if master.Status not in (GRB.OPTIMAL, GRB.TIME_LIMIT, GRB.SUBOPTIMAL):
+                    root_seed_stop_reason = f"lp_status_{master.Status}"
                     break
+
+                root_seed_lb = float(master.ObjVal)
+                if adaptive_seed and best_seed_lb > -float("inf"):
+                    improvement = root_seed_lb - best_seed_lb
+                    lb_tol = max(lb_abs_tol, lb_rel_tol * max(1.0, abs(best_seed_lb)))
+                    if improvement <= lb_tol:
+                        stall_rounds += 1
+                    else:
+                        stall_rounds = 0
+                    if stall_rounds >= stall_limit:
+                        root_seed_stop_reason = (
+                            f"lb_stall_{stall_rounds}_rounds"
+                        )
+                        event_log.append({
+                            "event": "root_seed_stop",
+                            "iteration": iter_no,
+                            "seeded_lb": root_seed_lb,
+                            "best_seeded_lb": best_seed_lb,
+                            "stall_rounds": stall_rounds,
+                            "runtime": time.time() - start_time,
+                        })
+                        if verbose:
+                            print(
+                                f"[root seed stop] seeded_LB={root_seed_lb:.2f} "
+                                f"best_LB={best_seed_lb:.2f} "
+                                f"stall_rounds={stall_rounds}/{stall_limit}"
+                            )
+                        break
+                if root_seed_lb > best_seed_lb:
+                    best_seed_lb = root_seed_lb
 
                 fs = _extract_first_stage(mv, J, H, round_values=False)
                 _, q_by_s, cut_by_s, cache_hit = evaluate_first_stage(fs)
@@ -841,6 +898,7 @@ def solve_bbc(
                             seed_cuts_added += 1
                             cuts_added += 1
                             cuts_this_iter += 1
+                            cuts_added_after_last_lp = True
                 else:
                     theta_val = float(mv["theta"]["__agg__"].X)
                     aggregate_q = sum(norm_probs[s] * q_by_s[s] for s in S_selected)
@@ -856,28 +914,53 @@ def solve_bbc(
                         seed_cuts_added += 1
                         cuts_added += 1
                         cuts_this_iter += 1
+                        cuts_added_after_last_lp = True
 
                 master.update()
                 event_log.append({
                     "event": "root_seed",
                     "iteration": iter_no,
+                    "seeded_lb": root_seed_lb,
                     "cuts_this_iter": cuts_this_iter,
                     "seed_cuts_added": seed_cuts_added,
+                    "stall_rounds": stall_rounds,
                     "cache_hit": cache_hit,
                     "runtime": time.time() - start_time,
                 })
                 if verbose:
                     print(
-                        f"[root seed {iter_no}] cuts={cuts_this_iter} "
+                        f"[root seed {iter_no}] LB={root_seed_lb:.2f} cuts={cuts_this_iter} "
                         f"total_seed_cuts={seed_cuts_added}"
                     )
                 if cuts_this_iter == 0:
+                    root_seed_stop_reason = "no_violated_cuts"
                     break
+            else:
+                root_seed_stop_reason = "max_iters"
+
+            if cuts_added_after_last_lp and time_limit - (time.time() - start_time) > 1.0:
+                master.setParam("TimeLimit", max(1.0, time_limit - (time.time() - start_time)))
+                master.optimize()
+                if master.SolCount > 0:
+                    root_seed_lb = float(master.ObjVal)
+                    event_log.append({
+                        "event": "root_seed_final_lp",
+                        "seeded_lb": root_seed_lb,
+                        "runtime": time.time() - start_time,
+                    })
         finally:
             for var, vtype in original_vtypes:
                 var.vtype = vtype
             master.update()
             root_seed_time += time.time() - seed_start
+            if verbose:
+                lb_text = f"{root_seed_lb:.2f}" if root_seed_lb is not None else "NA"
+                print(
+                    f"[root seed done] seeded_LB={lb_text} "
+                    f"reason={root_seed_stop_reason} "
+                    f"iters={root_seed_iters_done}/{root_seed_iters} "
+                    f"seed_cuts={seed_cuts_added} time={root_seed_time:.2f}s"
+                )
 
     try:
         run_root_seeding()
@@ -1058,6 +1141,8 @@ def solve_bbc(
             f"cuts_added={cuts_added} user_cuts={user_cuts_added} "
             f"lazy_cuts={lazy_cuts_added} seed_cuts={seed_cuts_added} "
             f"rootSeedIters={root_seed_iters_done}/{root_seed_iters} "
+            f"seeded_LB={root_seed_lb if root_seed_lb is not None else 'NA'} "
+            f"rootSeedStop={root_seed_stop_reason} "
             f"rootCutRounds={root_cut_rounds_done}/{root_cut_rounds} "
             f"parallel_oracles={parallel_oracles} oracle_solves={oracle_solves} "
             f"cache_hits={cache_hits} cache_misses={cache_misses} "
@@ -1078,6 +1163,8 @@ def solve_bbc(
         "lazy_cuts_added": lazy_cuts_added,
         "root_seed_iters": root_seed_iters,
         "root_seed_iters_done": root_seed_iters_done,
+        "root_seed_lb": root_seed_lb,
+        "root_seed_stop_reason": root_seed_stop_reason,
         "root_seed_time": root_seed_time,
         "root_cut_rounds": root_cut_rounds,
         "root_cut_rounds_done": root_cut_rounds_done,

@@ -57,7 +57,7 @@ VSS_EVPI_DECOMPOSE_EEV     = True  # True: EEV = Σ p_s·(固定x_EV的單情境
 VSS_EVPI_PARALLEL_WORKERS  = 6     # WS/EEV 同時求解的情境數（1 = 循序，行為同舊版）
 
 # ── Benders / B&BC 設定（Phase 0；只影響 lshaped 引擎，extensive form 完全不受影響）──
-SOLVER_ENGINE            = "extensive"   # "extensive" | "lshaped"（runner 依此分派求解引擎）
+SOLVER_ENGINE            = "lshaped"     # "extensive" | "lshaped"（runner 依此分派求解引擎）
 BENDERS_MULTI_CUT        = True    # False = single-cut（僅供實驗比較，預設恆 True）
 BENDERS_ROOT_CUT_ROUNDS  = 15      # root 節點分數解 user cut 輪數（0 = 關閉 root cuts）
 BENDERS_USE_USER_CUTS    = True    # True: root 節點分數解 user cut

@@ -26,6 +26,8 @@ def custom_callback(model, where):
         if node_cnt % 100 == 0:
             obj_bst = model.cbGet(GRB.Callback.MIP_OBJBST)
             obj_bnd = model.cbGet(GRB.Callback.MIP_OBJBND)
+            if obj_bnd < getattr(config, "BENDERS_PROGRESS_BOUND_FLOOR", -1e50):
+                return
             if obj_bst < GRB.INFINITY and obj_bst > 0:
                 gap = abs(obj_bst - obj_bnd) / obj_bst * 100
             else:

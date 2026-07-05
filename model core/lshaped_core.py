@@ -21,6 +21,7 @@ Cut 推導（reduced-cost / 敏感度形式）
 """
 from __future__ import annotations
 
+import math
 import time
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any
@@ -409,6 +410,213 @@ def _first_stage_cache_key(fs: dict[str, Any], ndigits: int = 8) -> tuple[Any, .
     )
 
 
+def _empty_first_stage(J: list[str], H: list[str]) -> dict[str, Any]:
+    return {
+        "X": {j: 0.0 for j in J},
+        "V": {j: 0.0 for j in J},
+        "U": {j: 0.0 for j in J},
+        "Y": {(h, j): 0.0 for h in H for j in J},
+    }
+
+
+def _clip_first_stage_to_relaxed_domain(
+    instance: dict[str, Any],
+    fs: dict[str, Any],
+) -> dict[str, Any]:
+    sets = instance["sets"]
+    J = sets["J"]
+    H = sets["H"]
+    params = instance["deterministic_parameters"]
+
+    clipped = _empty_first_stage(J, H)
+
+    for j in J:
+        clipped["X"][j] = min(1.0, max(0.0, float(fs["X"].get(j, 0.0))))
+
+    for j in J:
+        x_j = clipped["X"][j]
+        clipped["V"][j] = min(
+            float(params["ccp_staff_upper_bound"][j]) * x_j,
+            max(0.0, float(fs["V"].get(j, 0.0))),
+        )
+        clipped["U"][j] = min(
+            float(params["ccp_ambulance_upper_bound"][j]) * x_j,
+            max(0.0, float(fs["U"].get(j, 0.0))),
+        )
+
+    total_staff = float(params["total_available_staff"])
+    staff_sum = sum(clipped["V"].values())
+    if staff_sum > total_staff and staff_sum > 1e-9:
+        scale = total_staff / staff_sum
+        for j in J:
+            clipped["V"][j] *= scale
+
+    total_ambulances = float(params["total_available_ccp_ambulances"])
+    ambulance_sum = sum(clipped["U"].values())
+    if ambulance_sum > total_ambulances and ambulance_sum > 1e-9:
+        scale = total_ambulances / ambulance_sum
+        for j in J:
+            clipped["U"][j] *= scale
+
+    for h in H:
+        for j in J:
+            if clipped["X"][j] <= 1e-9:
+                clipped["Y"][(h, j)] = 0.0
+            else:
+                clipped["Y"][(h, j)] = max(0.0, float(fs["Y"].get((h, j), 0.0)))
+
+    # Alternate row/column scaling to keep the core point inside the relaxed
+    # first-stage feasible region without solving another projection problem.
+    for _ in range(3):
+        for h in H:
+            row_cap = float(params["hospital_supply_upper_bound"][h])
+            row_sum = sum(clipped["Y"][(h, j)] for j in J)
+            if row_sum > row_cap and row_sum > 1e-9:
+                scale = row_cap / row_sum
+                for j in J:
+                    clipped["Y"][(h, j)] *= scale
+
+        for j in J:
+            col_cap = float(params["ccp_supply_upper_bound"][j]) * clipped["X"][j]
+            col_sum = sum(clipped["Y"][(h, j)] for h in H)
+            if col_sum > col_cap and col_sum > 1e-9:
+                scale = col_cap / col_sum
+                for h in H:
+                    clipped["Y"][(h, j)] *= scale
+
+    return clipped
+
+
+def _build_initial_core_point(instance: dict[str, Any]) -> dict[str, Any]:
+    sets = instance["sets"]
+    J = sets["J"]
+    H = sets["H"]
+    params = instance["deterministic_parameters"]
+
+    staff_per_j = 0.7 * float(params["total_available_staff"]) / max(1, len(J))
+    ambulance_per_j = 0.7 * float(params["total_available_ccp_ambulances"]) / max(1, len(J))
+    total_y_cap = min(
+        sum(float(params["hospital_supply_upper_bound"][h]) for h in H),
+        sum(float(params["ccp_supply_upper_bound"][j]) for j in J),
+    )
+    y_per_hj = 0.7 * total_y_cap / max(1, len(H) * len(J))
+
+    core_point = {
+        "X": {j: 1.0 for j in J},
+        "V": {j: staff_per_j for j in J},
+        "U": {j: ambulance_per_j for j in J},
+        "Y": {(h, j): y_per_hj for h in H for j in J},
+    }
+    return _clip_first_stage_to_relaxed_domain(instance, core_point)
+
+
+def _blend_core_point(
+    instance: dict[str, Any],
+    core_point: dict[str, Any],
+    master_fs: dict[str, Any],
+    blend: float = 0.5,
+) -> dict[str, Any]:
+    sets = instance["sets"]
+    J = sets["J"]
+    H = sets["H"]
+    keep = min(1.0, max(0.0, float(blend)))
+    take = 1.0 - keep
+
+    blended = {
+        "X": {j: keep * float(core_point["X"][j]) + take * float(master_fs["X"][j]) for j in J},
+        "V": {j: keep * float(core_point["V"][j]) + take * float(master_fs["V"][j]) for j in J},
+        "U": {j: keep * float(core_point["U"][j]) + take * float(master_fs["U"][j]) for j in J},
+        "Y": {
+            (h, j): keep * float(core_point["Y"][(h, j)]) + take * float(master_fs["Y"][(h, j)])
+            for h in H for j in J
+        },
+    }
+    return _clip_first_stage_to_relaxed_domain(instance, blended)
+
+
+def _rounded_first_stage_heuristic(
+    instance: dict[str, Any],
+    master_fs: dict[str, Any],
+) -> dict[str, Any]:
+    sets = instance["sets"]
+    J = sets["J"]
+    H = sets["H"]
+    params = instance["deterministic_parameters"]
+
+    rounded = _empty_first_stage(J, H)
+    for j in J:
+        rounded["X"][j] = 1.0 if float(master_fs["X"][j]) >= 0.5 else 0.0
+        if rounded["X"][j] > 0.5:
+            rounded["V"][j] = max(0.0, float(master_fs["V"][j]))
+            rounded["U"][j] = max(0.0, float(master_fs["U"][j]))
+            for h in H:
+                rounded["Y"][(h, j)] = max(0.0, float(master_fs["Y"][(h, j)]))
+
+    rounded = _clip_first_stage_to_relaxed_domain(instance, rounded)
+
+    x_int = {j: int(round(rounded["X"][j])) for j in J}
+    v_int = {j: int(math.floor(rounded["V"][j] + 1e-9)) for j in J}
+    u_int = {j: int(math.floor(rounded["U"][j] + 1e-9)) for j in J}
+    y_int = {(h, j): int(math.floor(rounded["Y"][(h, j)] + 1e-9)) for h in H for j in J}
+
+    def _greedy_fill(values_int: dict[str, int], values_float: dict[str, float], total_cap: float, ub: dict[str, float]) -> None:
+        total_cap_int = int(math.floor(total_cap + 1e-9))
+        current = sum(values_int.values())
+        order = sorted(J, key=lambda j: values_float[j] - values_int[j], reverse=True)
+        while current < total_cap_int:
+            progressed = False
+            for j in order:
+                if values_float[j] <= values_int[j] + 1e-9:
+                    continue
+                if values_int[j] + 1 > int(math.floor(ub[j] + 1e-9)):
+                    continue
+                values_int[j] += 1
+                current += 1
+                progressed = True
+                if current >= total_cap_int:
+                    break
+            if not progressed:
+                break
+
+    _greedy_fill(
+        v_int,
+        rounded["V"],
+        float(params["total_available_staff"]),
+        {j: float(params["ccp_staff_upper_bound"][j]) * x_int[j] for j in J},
+    )
+    _greedy_fill(
+        u_int,
+        rounded["U"],
+        float(params["total_available_ccp_ambulances"]),
+        {j: float(params["ccp_ambulance_upper_bound"][j]) * x_int[j] for j in J},
+    )
+
+    row_used = {h: sum(y_int[(h, j)] for j in J) for h in H}
+    col_used = {j: sum(y_int[(h, j)] for h in H) for j in J}
+    y_order = sorted(
+        [(h, j) for h in H for j in J],
+        key=lambda idx: rounded["Y"][idx] - y_int[idx],
+        reverse=True,
+    )
+    for h, j in y_order:
+        if rounded["Y"][(h, j)] <= y_int[(h, j)] + 1e-9:
+            continue
+        if row_used[h] + 1 > int(math.floor(float(params["hospital_supply_upper_bound"][h]) + 1e-9)):
+            continue
+        if col_used[j] + 1 > int(math.floor(float(params["ccp_supply_upper_bound"][j]) * x_int[j] + 1e-9)):
+            continue
+        y_int[(h, j)] += 1
+        row_used[h] += 1
+        col_used[j] += 1
+
+    return {
+        "X": x_int,
+        "V": v_int,
+        "U": u_int,
+        "Y": y_int,
+    }
+
+
 def solve_classic(
     instance: dict[str, Any],
     S_selected: list[str],
@@ -627,6 +835,9 @@ def solve_bbc(
         if ev_warm_start is None
         else bool(ev_warm_start)
     )
+    papadakos_blend = float(getattr(config, "BENDERS_PAPADAKOS_BLEND", 0.5))
+    rounding_heur_freq = max(1, int(getattr(config, "BENDERS_ROOT_SEED_ROUND_HEUR_FREQ", 10)))
+    progress_bound_floor = float(getattr(config, "BENDERS_PROGRESS_BOUND_FLOOR", -1e50))
 
     sets = instance["sets"]
     J = sets["J"]
@@ -699,6 +910,7 @@ def solve_bbc(
     cache_hits = 0
     cache_misses = 0
     last_progress_print = start_time
+    core_point = _build_initial_core_point(instance)
     evaluation_cache: dict[
         tuple[Any, ...],
         tuple[float, dict[str, float], dict[str, Any]],
@@ -766,6 +978,8 @@ def solve_bbc(
                 lb = float(model.cbGet(GRB.Callback.MIPNODE_OBJBND))
         except Exception:
             lb = None
+        if lb is not None and (not math.isfinite(lb) or lb < progress_bound_floor):
+            return
         gap_txt = "NA"
         if lb is not None and best_ub < float("inf"):
             gap_txt = f"{_relative_gap(best_ub, lb) * 100.0:.2f}%"
@@ -776,6 +990,46 @@ def solve_bbc(
             f"UB={ub_txt} LB={lb_txt} gap={gap_txt}"
         )
         last_progress_print = time.time()
+
+    def add_dual_track_cuts(
+        theta_values: dict[str, float],
+        eval_fs: dict[str, Any],
+        standard_q_by_s: dict[str, float],
+        standard_cut_by_s: dict[str, Any],
+        pareto_cut_by_s: dict[str, Any],
+        signature_store: set[tuple[Any, ...]],
+        add_cut: Any,
+        name_prefix: str,
+        iteration_label: Any,
+    ) -> int:
+        cuts_this_round = 0
+        for s in S_selected:
+            standard_cut = standard_cut_by_s[s]
+            standard_rhs = standard_q_by_s[s]
+            standard_tol = config.BENDERS_CUT_VIOL_REL_TOL * max(1.0, abs(standard_rhs))
+            standard_sig = _cut_signature(s, standard_cut)
+            if standard_rhs > theta_values[s] + standard_tol and standard_sig not in signature_store:
+                add_cut(
+                    s,
+                    standard_cut,
+                    f"{name_prefix}_{iteration_label}_{s}_std",
+                )
+                signature_store.add(standard_sig)
+                cuts_this_round += 1
+
+            pareto_cut = pareto_cut_by_s[s]
+            pareto_rhs = oracles[s].cut_value_at(pareto_cut, eval_fs)
+            pareto_tol = config.BENDERS_CUT_VIOL_REL_TOL * max(1.0, abs(pareto_rhs))
+            pareto_sig = _cut_signature(s, pareto_cut)
+            if pareto_rhs > theta_values[s] + pareto_tol and pareto_sig not in signature_store:
+                add_cut(
+                    s,
+                    pareto_cut,
+                    f"{name_prefix}_{iteration_label}_{s}_pareto",
+                )
+                signature_store.add(pareto_sig)
+                cuts_this_round += 1
+        return cuts_this_round
 
     if ev_warm_start:
         try:
@@ -800,6 +1054,7 @@ def solve_bbc(
             raise
 
     def run_root_seeding() -> None:
+        nonlocal best_ub, best_fs, best_q, core_point
         nonlocal cuts_added, seed_cuts_added, root_seed_iters_done, root_seed_time
         nonlocal root_seed_lb, root_seed_stop_reason
         if root_seed_iters <= 0:
@@ -807,11 +1062,10 @@ def solve_bbc(
             return
 
         seed_start = time.time()
-        adaptive_seed = bool(getattr(config, "BENDERS_ROOT_SEED_ADAPTIVE", True))
         stall_limit = max(1, int(getattr(config, "BENDERS_ROOT_SEED_STALL_ROUNDS", 5)))
-        lb_abs_tol = float(getattr(config, "BENDERS_ROOT_SEED_LB_ABS_TOL", 1e-3))
-        lb_rel_tol = float(getattr(config, "BENDERS_ROOT_SEED_LB_REL_TOL", 1e-5))
+        lb_rel_tol = float(getattr(config, "BENDERS_ROOT_SEED_LB_REL_TOL", 5e-4))
         best_seed_lb = -float("inf")
+        prev_seed_lb = None
         stall_rounds = 0
         cuts_added_after_last_lp = False
         original_vtypes: list[tuple[gp.Var, str]] = []
@@ -830,8 +1084,11 @@ def solve_bbc(
 
             if verbose:
                 print("=" * 70)
-                mode = "adaptive" if adaptive_seed else "fixed"
-                print(f"B&BC ROOT SEEDING ({mode}, max {root_seed_iters} LP iterations)")
+                print(
+                    "B&BC ROOT SEEDING "
+                    f"(Papadakos dual-track, max {root_seed_iters} LP iterations, "
+                    f"stop after {stall_limit} rounds with LB improvement < {lb_rel_tol * 100:.4f}%)"
+                )
                 print("=" * 70)
 
             for iter_no in range(1, root_seed_iters + 1):
@@ -849,56 +1106,64 @@ def solve_bbc(
                     break
 
                 root_seed_lb = float(master.ObjVal)
-                if adaptive_seed and best_seed_lb > -float("inf"):
-                    improvement = root_seed_lb - best_seed_lb
-                    lb_tol = max(lb_abs_tol, lb_rel_tol * max(1.0, abs(best_seed_lb)))
-                    if improvement <= lb_tol:
+                if prev_seed_lb is not None:
+                    rel_improvement = (root_seed_lb - prev_seed_lb) / max(1.0, abs(prev_seed_lb))
+                    if rel_improvement < lb_rel_tol:
                         stall_rounds += 1
                     else:
                         stall_rounds = 0
                     if stall_rounds >= stall_limit:
                         root_seed_stop_reason = (
-                            f"lb_stall_{stall_rounds}_rounds"
+                            f"lb_rel_improve_below_{lb_rel_tol:.6f}_for_{stall_rounds}_rounds"
                         )
                         event_log.append({
                             "event": "root_seed_stop",
                             "iteration": iter_no,
                             "seeded_lb": root_seed_lb,
-                            "best_seeded_lb": best_seed_lb,
+                            "prev_seeded_lb": prev_seed_lb,
                             "stall_rounds": stall_rounds,
+                            "rel_improvement_pct": rel_improvement * 100.0,
                             "runtime": time.time() - start_time,
                         })
                         if verbose:
                             print(
                                 f"[root seed stop] seeded_LB={root_seed_lb:.2f} "
-                                f"best_LB={best_seed_lb:.2f} "
+                                f"prev_LB={prev_seed_lb:.2f} "
+                                f"rel_improve={rel_improvement * 100.0:.4f}% "
                                 f"stall_rounds={stall_rounds}/{stall_limit}"
                             )
                         break
+                prev_seed_lb = root_seed_lb
                 if root_seed_lb > best_seed_lb:
                     best_seed_lb = root_seed_lb
 
                 fs = _extract_first_stage(mv, J, H, round_values=False)
                 _, q_by_s, cut_by_s, cache_hit = evaluate_first_stage(fs)
+                core_point = _blend_core_point(instance, core_point, fs, blend=papadakos_blend)
+                _, _, pareto_cut_by_s, pareto_cache_hit = evaluate_first_stage(core_point)
                 root_seed_iters_done += 1
                 cuts_this_iter = 0
 
                 if multi_cut:
                     theta_vals = _theta_values(mv, S_selected, multi_cut=True)
-                    for s in S_selected:
-                        q_s = q_by_s[s]
-                        tol = config.BENDERS_CUT_VIOL_REL_TOL * max(1.0, abs(q_s))
-                        sig = _cut_signature(s, cut_by_s[s])
-                        if q_s > theta_vals[s] + tol and sig not in seed_cut_signatures:
-                            master.addConstr(
-                                mv["theta"][s] >= cut_expr(cut_by_s[s], mv, J, H),
-                                name=f"RootSeedCut_{iter_no}_{s}",
-                            )
-                            seed_cut_signatures.add(sig)
-                            seed_cuts_added += 1
-                            cuts_added += 1
-                            cuts_this_iter += 1
-                            cuts_added_after_last_lp = True
+                    cuts_this_iter = add_dual_track_cuts(
+                        theta_vals,
+                        fs,
+                        q_by_s,
+                        cut_by_s,
+                        pareto_cut_by_s,
+                        seed_cut_signatures,
+                        lambda s, cut, name: master.addConstr(
+                            mv["theta"][s] >= cut_expr(cut, mv, J, H),
+                            name=name,
+                        ),
+                        "RootSeedCut",
+                        iter_no,
+                    )
+                    if cuts_this_iter > 0:
+                        seed_cuts_added += cuts_this_iter
+                        cuts_added += cuts_this_iter
+                        cuts_added_after_last_lp = True
                 else:
                     theta_val = float(mv["theta"]["__agg__"].X)
                     aggregate_q = sum(norm_probs[s] * q_by_s[s] for s in S_selected)
@@ -917,6 +1182,25 @@ def solve_bbc(
                         cuts_added_after_last_lp = True
 
                 master.update()
+                if iter_no % rounding_heur_freq == 0:
+                    rounded_fs = _rounded_first_stage_heuristic(instance, fs)
+                    rounded_ub, rounded_q, _, rounded_cache_hit = evaluate_first_stage(rounded_fs)
+                    event_log.append({
+                        "event": "root_seed_rounding_heuristic",
+                        "iteration": iter_no,
+                        "ub": rounded_ub,
+                        "improved_best_ub": rounded_ub < best_ub,
+                        "cache_hit": rounded_cache_hit,
+                        "runtime": time.time() - start_time,
+                    })
+                    if rounded_ub < best_ub:
+                        best_ub = rounded_ub
+                        best_fs = rounded_fs
+                        best_q = rounded_q
+                        _apply_first_stage_start(mv, rounded_fs, J, H)
+                        _apply_theta_start(mv, S_selected, rounded_q, norm_probs, multi_cut)
+                        if verbose:
+                            print(f"[root heuristic {iter_no}] improved UB={rounded_ub:.2f}")
                 event_log.append({
                     "event": "root_seed",
                     "iteration": iter_no,
@@ -925,6 +1209,7 @@ def solve_bbc(
                     "seed_cuts_added": seed_cuts_added,
                     "stall_rounds": stall_rounds,
                     "cache_hit": cache_hit,
+                    "pareto_cache_hit": pareto_cache_hit,
                     "runtime": time.time() - start_time,
                 })
                 if verbose:
@@ -933,7 +1218,7 @@ def solve_bbc(
                         f"total_seed_cuts={seed_cuts_added}"
                     )
                 if cuts_this_iter == 0:
-                    root_seed_stop_reason = "no_violated_cuts"
+                    root_seed_stop_reason = "lp_converged"
                     break
             else:
                 root_seed_stop_reason = "max_iters"
@@ -980,7 +1265,7 @@ def solve_bbc(
         print("=" * 70)
 
     def bbc_callback(model, where):
-        nonlocal best_ub, best_fs, best_q
+        nonlocal best_ub, best_fs, best_q, core_point
         nonlocal cuts_added, lazy_cuts_added, user_cuts_added
         nonlocal incumbent_evals, root_cut_rounds_done, callback_time
 
@@ -1008,22 +1293,29 @@ def solve_bbc(
                 from_callback=model.cbGetNodeRel,
             )
             _, q_by_s, cut_by_s, cache_hit = evaluate_first_stage(fs)
+            core_point = _blend_core_point(instance, core_point, fs, blend=papadakos_blend)
+            _, _, pareto_cut_by_s, pareto_cache_hit = evaluate_first_stage(core_point)
             root_cut_rounds_done += 1
             cuts_this_node = 0
 
             if multi_cut:
-                for s in S_selected:
-                    theta_val = model.cbGetNodeRel(mv["theta"][s])
-                    q_s = q_by_s[s]
-                    cut = cut_by_s[s]
-                    tol = config.BENDERS_CUT_VIOL_REL_TOL * max(1.0, abs(q_s))
-                    sig = _cut_signature(s, cut)
-                    if q_s > theta_val + tol and sig not in user_cut_signatures:
-                        model.cbCut(mv["theta"][s] >= cut_expr(cut, mv, J, H))
-                        user_cut_signatures.add(sig)
-                        user_cuts_added += 1
-                        cuts_added += 1
-                        cuts_this_node += 1
+                theta_vals = {
+                    s: model.cbGetNodeRel(mv["theta"][s])
+                    for s in S_selected
+                }
+                cuts_this_node = add_dual_track_cuts(
+                    theta_vals,
+                    fs,
+                    q_by_s,
+                    cut_by_s,
+                    pareto_cut_by_s,
+                    user_cut_signatures,
+                    lambda s, cut, _name: model.cbCut(mv["theta"][s] >= cut_expr(cut, mv, J, H)),
+                    "RootUserCut",
+                    root_cut_rounds_done,
+                )
+                user_cuts_added += cuts_this_node
+                cuts_added += cuts_this_node
             else:
                 theta_val = model.cbGetNodeRel(mv["theta"]["__agg__"])
                 aggregate_q = sum(norm_probs[s] * q_by_s[s] for s in S_selected)
@@ -1044,6 +1336,7 @@ def solve_bbc(
                 "cuts_this_node": cuts_this_node,
                 "user_cuts_added": user_cuts_added,
                 "cache_hit": cache_hit,
+                "pareto_cache_hit": pareto_cache_hit,
                 "runtime": time.time() - start_time,
             })
             return

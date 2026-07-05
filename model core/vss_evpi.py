@@ -45,6 +45,8 @@ def _make_callback():
         now = time.time()
         obj_bst = model.cbGet(GRB.Callback.MIP_OBJBST)
         obj_bnd = model.cbGet(GRB.Callback.MIP_OBJBND)
+        if obj_bnd < getattr(config, "BENDERS_PROGRESS_BOUND_FLOOR", -1e50):
+            return
         if obj_bst < GRB.INFINITY and abs(obj_bst) > 1e-9:
             gap = abs(obj_bst - obj_bnd) / abs(obj_bst) * 100
         else:

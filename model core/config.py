@@ -46,6 +46,15 @@ SP_TIME_LIMIT = 3600.0
 SP_MIP_GAP = 0.01
 SP_PROGRESS_INTERVAL_SEC = 10.0
 
+# ── 風險模型設定（plan/08-09；只影響 mcvar/dro 入口，SP 路徑完全不受影響）──
+RISK_ALPHA  = 0.9    # CVaR 信心水準 α ∈ [0,1)（越大越保守）
+RISK_LAMBDA = 0.5    # mean 與 CVaR 的權重 λ ∈ [0,1]（0 = 純期望值 = SP；1 = 純 CVaR）
+# DRO ambiguity set 參數（plan/09；預設值取 Jin et al. 2024 小算例設定）
+DRO_AMBIGUITY_SET = "box"   # "box" | "ellipsoidal" | "polyhedral"
+DRO_EPSILON_BOX   = 0.01    # box：|p_s − p0_s| ≤ ε̄_B；必須 ≤ min_s p0_s（等權重時 = 1/S）
+DRO_A_E           = 0.0005  # ellipsoidal：A_E = a_E · I
+DRO_A_P           = 0.001   # polyhedral：A_P = a_P · I
+
 # VSS/EVPI 子問題時間預算（定義不變，只限制求解時間與精度）
 # 最壞情況總時間 ≈ SP 3600 + EV 180 + EEV 180 + WS 5×120 = 76 分鐘
 VSS_EVPI_EV_TIME_LIMIT  = 180.0   # EV：單情境確定性模型

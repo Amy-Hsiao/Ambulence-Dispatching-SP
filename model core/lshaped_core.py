@@ -31,6 +31,7 @@ from gurobipy import GRB
 
 import config
 import extensive_form_core as model_core
+import risk_core
 
 
 # ====================================================================== #
@@ -182,10 +183,15 @@ class ScenarioOracle:
 def build_master(instance: dict[str, Any], S_selected: list[str],
                  norm_probs: dict[str, float],
                  time_limit: float = 3600.0, mip_gap: float = 0.01,
-                 multi_cut: bool = True):
+                 multi_cut: bool = True,
+                 risk_cfg: dict[str, Any] | None = None):
     """建 Benders master：一階變數 + 一階限制式 + θ 變數。
 
     Returns (model, vars_dict)；vars_dict 含 X/V/U/Y 與 theta（{s: var} 或 {"__agg__": var}）。
+
+    risk_cfg（plan/08）：None = 原 SP 期望值目標（行為與舊版完全相同）；
+    否則由 risk_core.attach_risk_to_master 加上 φ/ℓ 風險層並改寫目標式，
+    cut 仍全部掛在 θ_s 上，一階限制式不變。
     """
     sets   = instance["sets"]
     J      = sets["J"]
@@ -240,8 +246,11 @@ def build_master(instance: dict[str, Any], S_selected: list[str],
             f"Logic_Y_{j}",
         )
 
-    return m, {"X": X, "V": V, "U": U, "Y": Y, "theta": theta,
-               "first_stage_cost_expr": first_stage_cost}
+    mv = {"X": X, "V": V, "U": U, "Y": Y, "theta": theta,
+          "first_stage_cost_expr": first_stage_cost}
+    if risk_cfg is not None:
+        risk_core.attach_risk_to_master(m, mv, S_selected, norm_probs, risk_cfg)
+    return m, mv
 
 
 def cut_expr(cut: dict[str, Any], mv: dict[str, Any], J: list[str], H: list[str]):
@@ -625,14 +634,22 @@ def solve_classic(
     multi_cut: bool = True,
     max_iterations: int | None = None,
     verbose: bool = True,
+    risk_cfg: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Solve the RP with the classic multi-cut L-shaped loop.
 
     This is the Phase 2 correctness baseline.  The UB is always recomputed by
     evaluating the incumbent first-stage solution with every scenario oracle.
+
+    risk_cfg=None 時行為與舊版完全相同；風險模型（mcvar/dro）強制 multi-cut。
     """
     if not S_selected:
         raise ValueError("S_selected must contain at least one scenario.")
+    if risk_cfg is not None and not multi_cut:
+        raise ValueError(
+            "Risk-averse solve (mcvar/dro) requires multi_cut=True；"
+            "single-cut 聚合 θ 無法定義 per-scenario ℓ_s。"
+        )
 
     time_limit = config.SP_TIME_LIMIT if time_limit is None else float(time_limit)
     mip_gap = config.SP_MIP_GAP if mip_gap is None else float(mip_gap)
@@ -651,6 +668,7 @@ def solve_classic(
         time_limit=time_limit,
         mip_gap=mip_gap,
         multi_cut=multi_cut,
+        risk_cfg=risk_cfg,
     )
     master.setParam("NumericFocus", 1)
 
@@ -730,7 +748,12 @@ def solve_classic(
                 cuts_added += 1
                 cuts_this_iter += 1
 
-        true_ub = _first_stage_cost(instance, fs) + weighted_q
+        # risk_cfg=None → Σ p_s·Q_s（同舊版）；否則以風險目標評估 true UB
+        true_ub = _first_stage_cost(instance, fs) + (
+            weighted_q
+            if risk_cfg is None
+            else risk_core.second_stage_objective_from_Q(q_by_s, norm_probs, risk_cfg)
+        )
         if true_ub < best_ub:
             best_ub = true_ub
             best_fs = fs
@@ -800,12 +823,17 @@ def solve_bbc(
     use_user_cuts: bool | None = None,
     ev_warm_start: bool | None = None,
     verbose: bool = True,
+    risk_cfg: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Solve the RP with Branch-and-Benders-Cut lazy constraints.
 
     LP root seeding adds ordinary Benders cuts before branch-and-cut starts.
     Lazy cuts are generated at integer incumbents. Optional root user cuts are
     generated inside the root-node LP callback and limited by root_cut_rounds.
+
+    risk_cfg（plan/08）：None = 原 SP（行為與舊版完全相同）；"mcvar"/"dro_*"
+    時 master 目標式含風險層，所有 UB / incumbent / heuristic 評估一律以
+    risk_core.second_stage_objective_from_Q 計算，cut 邏輯與 oracle 不變。
     """
     if not S_selected:
         raise ValueError("S_selected must contain at least one scenario.")
@@ -813,6 +841,11 @@ def solve_bbc(
     time_limit = config.SP_TIME_LIMIT if time_limit is None else float(time_limit)
     mip_gap = config.SP_MIP_GAP if mip_gap is None else float(mip_gap)
     multi_cut = config.BENDERS_MULTI_CUT if multi_cut is None else bool(multi_cut)
+    if risk_cfg is not None and not multi_cut:
+        raise ValueError(
+            "Risk-averse solve (mcvar/dro) requires multi_cut=True；"
+            "single-cut 聚合 θ 無法定義 per-scenario ℓ_s。"
+        )
     if root_seed_iters is None:
         root_seed_iters = getattr(config, "BENDERS_ROOT_SEED_ITERS", 0)
     if root_cut_rounds is None:
@@ -852,6 +885,7 @@ def solve_bbc(
         time_limit=time_limit,
         mip_gap=mip_gap,
         multi_cut=multi_cut,
+        risk_cfg=risk_cfg,
     )
     master.setParam("LazyConstraints", 1)
     master.setParam("PreCrush", 1)
@@ -959,7 +993,12 @@ def solve_bbc(
             q_by_s[s] = q_s
             cut_by_s[s] = cut
             weighted_q += norm_probs[s] * q_s
-        true_ub = _first_stage_cost(instance, fs) + weighted_q
+        # risk_cfg=None → Σ p_s·Q_s（同舊版）；否則以風險目標評估 true UB
+        true_ub = _first_stage_cost(instance, fs) + (
+            weighted_q
+            if risk_cfg is None
+            else risk_core.second_stage_objective_from_Q(q_by_s, norm_probs, risk_cfg)
+        )
         evaluation_cache[key] = (true_ub, q_by_s, cut_by_s)
         cache_misses += 1
         return true_ub, q_by_s, cut_by_s, False
@@ -1039,6 +1078,7 @@ def solve_bbc(
                 ev_ub, ev_q, _, _ = evaluate_first_stage(ev_fs)
                 _apply_first_stage_start(mv, ev_fs, J, H)
                 _apply_theta_start(mv, S_selected, ev_q, norm_probs, multi_cut)
+                risk_core.apply_risk_start(mv, S_selected, ev_q, norm_probs, risk_cfg)
                 best_ub = ev_ub
                 best_fs = ev_fs
                 best_q = ev_q
@@ -1199,6 +1239,7 @@ def solve_bbc(
                         best_q = rounded_q
                         _apply_first_stage_start(mv, rounded_fs, J, H)
                         _apply_theta_start(mv, S_selected, rounded_q, norm_probs, multi_cut)
+                        risk_core.apply_risk_start(mv, S_selected, rounded_q, norm_probs, risk_cfg)
                         if verbose:
                             print(f"[root heuristic {iter_no}] improved UB={rounded_ub:.2f}")
                 event_log.append({

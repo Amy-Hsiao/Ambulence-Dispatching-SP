@@ -26,6 +26,11 @@
 5. `05_VSS_EVPI_PROMPT.md`：完成 RP、EV、EEV、WS、VSS、EVPI 計算流程。
 6. `06_OUTPUTS_STRESS_TESTS_PROMPT.md`：完成結果輸出、stress test 表格與 bottleneck summary。
 7. `07_VALIDATION_ACCEPTANCE_PROMPT.md`：補完整驗證、tiny baseline、回歸測試與最終交付檢查。
+8. `08_MCVAR_BBC_PROMPT.md`：SP + MCVaR（直接 B&BC + 既有 enhancement，不寫 extensive form）。
+9. `09_DRO_BBC_PROMPT.md`：SP + MCVaR + DRO（box / ellipsoidal / polyhedral 對偶重構，B&BC）。
+10. `10_RISK_EXPERIMENTS_PROMPT.md`：實驗一（DRO 三種 ambiguity set 的 α×λ 網格，輸出 Excel 三分頁）與批次調參入口 `run experiment/batch_risk_experiment.py`；後續實驗待實驗一確認後再計畫。
+
+註：階段 8–10 例外於原則 6（風險模型直接用 Benders B&BC，經使用者明確要求）。
 
 ## 每階段完成後的停止規則
 

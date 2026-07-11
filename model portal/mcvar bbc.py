@@ -95,6 +95,7 @@ def _run(scenario_size, sample_ratio, time_limit, mip_gap, risk_cfg, compute_kpi
             ("root_cut_rounds", getattr(config, "BENDERS_ROOT_CUT_ROUNDS", 0)),
             ("use_user_cuts", getattr(config, "BENDERS_USE_USER_CUTS", False)),
             ("ev_warm_start", getattr(config, "BENDERS_EV_WARM_START", True)),
+            ("pareto_enabled", getattr(config, "BENDERS_PARETO_ENABLED", True)),
         ),
     )
 
@@ -155,6 +156,8 @@ def _run(scenario_size, sample_ratio, time_limit, mip_gap, risk_cfg, compute_kpi
             "root_cut_rounds_done": result.get("root_cut_rounds_done"),
             "root_cut_rounds":      result.get("root_cut_rounds"),
             "use_user_cuts":        result.get("use_user_cuts"),
+            "pareto_enabled":       result.get("pareto_enabled"),
+            "parallel_oracles":     result.get("parallel_oracles"),
             "oracle_solves":        result.get("oracle_solves"),
             "incumbent_evals":      result.get("incumbent_evals"),
             "callback_time":        result.get("callback_time"),

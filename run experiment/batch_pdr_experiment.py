@@ -1,24 +1,27 @@
 #!/usr/bin/env python3
 """
-Batch DRO risk-parameter experiment runner（實驗一，plan/10）。
+Batch PDR experiment runner（實驗二，plan/11）。
 
-三種 ambiguity set × α × λ 網格掃描（模型 = SP + MCVaR + DRO，B&BC 引擎）。
+PDR = (DRO* − MCVaR*) / MCVaR*（Jin et al. 2024 式 41；baseline 是同 α、λ
+的 SP+MCVaR，不是純 SP）。固定 α = λ（預設 0.9），掃三種 ambiguity set 的
+scope。共 1（MCVaR baseline）+ 3 sets × len(scopes) 次求解。
+
 This script is only a runner. It temporarily changes values in the imported
 config module while it runs each case, then restores them. It does not
 rewrite config.py and does not change the model core logic.
 
+⚠ Gap 紀律：PDR 通常 < 1%，MIP_GAP 必須遠小於 PDR 訊號（預設 1e-4，
+正式跑建議更緊）；baseline 與 DRO 用同一 gap、同 seed、同情境資料。
+
 輸出（experiment result/）：
-* raw CSV（來源真相，每 case 一列，逐 case 重寫）
-* Excel 六分頁：
-    - "box" / "ellipsoidal" / "polyhedral"：明細表（欄位同 stress test：
-      factor | I | J | H | S | T | obj_value | First Stage Decision |
-      Best LB | Best UB | CPU Time(s) | num_vars | num_constrs | Nodes |
-      Iteration | Final Gap(%) + risk/B&BC 統計欄）
-    - "box_matrix" / "ellipsoidal_matrix" / "polyhedral_matrix"：
-      α（列）× λ（欄）的 obj_value 矩陣（Jin et al. Table 4 格式），
-      下方另附 CPU Time 與 Final Gap 矩陣
-* first_stage/{test_id}.json：完整一階解（供 out-of-sample 等後續實驗重用）
-* console：每 case 一行摘要；全部結束後印出三個 α×λ 矩陣與單調性警告
+* raw CSV（來源真相，逐 case 重寫）
+* Excel 四分頁：
+    - "box" / "ellipsoidal" / "polyhedral"：明細表（欄位同 stress test，
+      不含 VSS/EVPI；第一列 = MCVaR baseline，之後每列一個 scope，
+      尾端附 scope、PDR(%) 與 risk 統計欄）
+    - "PDR_table"：論文格式（Jin Table 6）——ω|PDR、a_E|PDR、a_P|PDR
+      三組並排，可直接貼論文
+* first_stage/{test_id}.json：完整一階解（供 out-of-sample 重用）
 """
 from __future__ import annotations
 
@@ -28,7 +31,6 @@ import importlib.util
 import json
 import math
 import os
-import re
 import shutil
 import sys
 import time
@@ -41,21 +43,21 @@ from typing import Any
 # Parameter setting area
 # =============================================================================
 
-# ── 實驗網格（Jin et al. 2024 Table 4 的 α × λ 組合）─────────────────────────
-AMBIGUITY_SETS = ["box", "ellipsoidal", "polyhedral"]
-ALPHA_VALUES   = [0.5, 0.6, 0.7, 0.8, 0.9]
-LAMBDA_VALUES  = [0.3, 0.5, 0.7, 0.9]
+# ── 風險參數（Jin et al. Table 6 用 α = λ = 0.9）────────────────────────────
+RISK_ALPHA_FIXED  = 0.9
+RISK_LAMBDA_FIXED = 0.9
 
-# ── ambiguity scope（固定；box 需 ≤ 1/BASE_SCENARIOS，main() 會檢查）─────────
-SCOPES = {
-    "box":         0.01,
-    "ellipsoidal": 0.0005,
-    "polyhedral":  0.001,
+# ── scope 掃描值（box 需全部 ≤ 1/BASE_SCENARIOS，main() 會檢查）──────────────
+SCOPE_VALUES = {
+    "box":         [0.001, 0.005, 0.01, 0.02, 0.03],
+    "ellipsoidal": [0.00005, 0.0001, 0.0005, 0.001, 0.01],
+    "polyhedral":  [0.0005, 0.001, 0.005, 0.01, 0.05, 0.5],
 }
+AMBIGUITY_SETS = ["box", "ellipsoidal", "polyhedral"]
 
-# ── Fixed base settings ──────────────────────────────────────────────────────
+# ── Fixed base settings（須與實驗一相同，數字才可互相對照）────────────────────
 BASE_SCENARIOS                    = 30
-BASE_CCP_SAMPLE_SIZE              = None    # None = 全部 CCP
+BASE_CCP_SAMPLE_SIZE              = None
 BASE_SAMPLE_RATIO                 = 1.0
 BASE_TIME_PERIODS                 = 8
 BASE_DEMAND_MULTIPLIER            = 1.0
@@ -64,13 +66,13 @@ BASE_HOSPITAL_CAPACITY_MULTIPLIER = 1.0
 
 # ── Solver settings ──────────────────────────────────────────────────────────
 TIME_LIMIT   = 3600.0
-MIP_GAP      = 1e-4     # 正式論文表採 0.01% relative gap，降低參數敏感度比較的求解誤差
-COMPUTE_KPIS = False    # 實驗一不需 KPI 重解（省時）；要 KPI 改 True
+MIP_GAP      = 1e-4     # 正式論文表採 0.01% relative gap；太慢可放寬但要註記
+COMPUTE_KPIS = False
 
 # ── Output settings ──────────────────────────────────────────────────────────
-RESULT_PREFIX   = "DRO_alpha_lambda"
-LOG_SUBDIR_NAME = "dro alpha lambda"
-STOP_ON_ERROR   = False   # 單一 case 失敗記 FAIL 續跑，不中斷整批
+RESULT_PREFIX   = "DRO_PDR"
+LOG_SUBDIR_NAME = "dro pdr"
+STOP_ON_ERROR   = False
 
 
 # =============================================================================
@@ -89,17 +91,22 @@ for _p in (str(ROOT_DIR / "model core"), str(ROOT_DIR)):
 
 import config as cfg  # noqa: E402
 
-DRO_MODEL_PATH = ROOT_DIR / "model portal" / "dro bbc.py"
+DRO_MODEL_PATH   = ROOT_DIR / "model portal" / "dro bbc.py"
+MCVAR_MODEL_PATH = ROOT_DIR / "model portal" / "mcvar bbc.py"
+
+SCOPE_SYMBOL = {"box": "ω (ε̄_B)", "ellipsoidal": "a_E", "polyhedral": "a_P"}
 
 FIELDNAMES = [
     "test_id",
-    "ambiguity_set",
+    "model",            # mcvar | dro_box | dro_ellipsoidal | dro_polyhedral
+    "ambiguity_set",    # baseline 時為 "mcvar"
     "alpha",
     "lambda",
     "scope",
     "factor",
     "I", "J", "H", "S", "T",
     "obj_value",
+    "PDR_pct",
     "first_stage_decision",
     "best_lb",
     "best_ub",
@@ -110,7 +117,6 @@ FIELDNAMES = [
     "nodes",
     "iterations",
     "gap_pct",
-    # ---- risk 統計（由 summary["risk"] 取得）----
     "n_opened_ccp",
     "sum_V",
     "sum_U",
@@ -122,21 +128,9 @@ FIELDNAMES = [
     "MCVaR",
     "WMCVaR",
     "worst_p_max_dev",
-    # ---- B&BC 引擎統計 ----
     "engine",
     "total_cuts",
-    "seed_cuts",
-    "lazy_cuts",
-    "user_cuts",
-    "root_seed_iters_done",
-    "root_seed_lb",
-    "root_seed_stop_reason",
-    "root_seed_time_s",
-    "root_cut_rounds_done",
-    "parallel_oracles",
     "oracle_solves",
-    "incumbent_evals",
-    "callback_time_s",
     "solver_status",
     "log_path",
     "status",
@@ -145,14 +139,8 @@ FIELDNAMES = [
 
 
 # =============================================================================
-# Helpers
+# Helpers（慣例同 batch_risk_experiment.py）
 # =============================================================================
-def fmt_value(value: Any) -> str:
-    if isinstance(value, float):
-        return f"{value:g}"
-    return str(value)
-
-
 def blank_row() -> dict[str, Any]:
     return {key: "NA" for key in FIELDNAMES}
 
@@ -183,7 +171,6 @@ def estimate_counts() -> dict[str, int]:
 
 
 def first_stage_string(fs: dict[str, Any] | None) -> str:
-    """把一階解 dict 轉成與 stress test 相同格式的多行字串。"""
     if not fs:
         return "NA"
     lines = []
@@ -313,86 +300,17 @@ def patched_generate_scenarios():
 # =============================================================================
 # Core run logic
 # =============================================================================
-def load_dro_module() -> Any:
-    spec = importlib.util.spec_from_file_location("dro_bbc_portal", DRO_MODEL_PATH)
+def load_portal(path: Path, name: str) -> Any:
+    spec = importlib.util.spec_from_file_location(name, path)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
 
 
-def run_one_case(
-    dro_module: Any,
-    run_idx: int,
-    total_runs: int,
-    aset: str,
-    alpha: float,
-    lam: float,
-    counts: dict[str, int],
-) -> dict[str, Any]:
-    scope = SCOPES[aset]
-    test_id = f"{aset}_a{alpha}_l{lam}".replace(".", "p")
-    row = blank_row()
-    row.update({
-        "test_id":       test_id,
-        "ambiguity_set": aset,
-        "alpha":         alpha,
-        "lambda":        lam,
-        "scope":         scope,
-        "factor":        f"{aset}, alpha={alpha}, lambda={lam}",
-        "I": counts["I"], "J": counts["J"], "H": counts["H"],
-        "S": BASE_SCENARIOS, "T": BASE_TIME_PERIODS,
-        "status": "RUNNING",
-        "note": "",
-    })
-
-    print(f"\n[{run_idx}/{total_runs}] {test_id}"
-          f" | scope={scope} | S={BASE_SCENARIOS}, T={BASE_TIME_PERIODS}")
-
-    logs_before = snapshot_logs()
-    wall_start = time.time()
-    model = None
-    summary = None
-    log_path = None
-    try:
-        try:
-            with (
-                temporary_config(),
-                patched_generate_data(),
-                patched_generate_scenarios(),
-            ):
-                model, summary = dro_module.run_dro_model(
-                    ambiguity_set=aset,
-                    scenario_size=BASE_SCENARIOS,
-                    sample_ratio=BASE_SAMPLE_RATIO,
-                    time_limit=TIME_LIMIT,
-                    mip_gap=MIP_GAP,
-                    alpha=alpha,
-                    lam=lam,
-                    scope=scope,
-                    compute_kpis=COMPUTE_KPIS,
-                )
-        finally:
-            log_path = move_log_to_subdir(newest_created_log(logs_before))
-            row["log_path"] = str(log_path) if log_path else "NA"
-            row["wall_s"] = f"{time.time() - wall_start:.2f}"
-    except Exception as exc:  # noqa: BLE001
-        row["status"] = "FAIL"
-        row["note"] = f"{type(exc).__name__}: {exc}"
-        print(f"  -> FAIL: {row['note']}")
-        if STOP_ON_ERROR:
-            raise
-        return row
-
-    if model is None or summary is None:
-        row["status"] = "FAIL"
-        row["note"] = "no feasible solution (see log)"
-        print(f"  -> FAIL: {row['note']}")
-        return row
-
+def _fill_common(row: dict[str, Any], model: Any, summary: dict[str, Any]) -> None:
     fs = summary.get("first_stage")
     risk = summary.get("risk", {})
     st = summary.get("bbc_stats", {})
-
     row.update({
         "obj_value": f"{summary['objective']:.4f}",
         "first_stage_decision": first_stage_string(fs),
@@ -409,35 +327,130 @@ def run_one_case(
         "VaR_phi":    f"{risk.get('phi_star_VaR', float('nan')):.2f}",
         "CVaR":       f"{risk.get('CVaR', float('nan')):.2f}",
         "MCVaR":      f"{risk.get('MCVaR', float('nan')):.2f}",
-        "WMCVaR":     f"{risk.get('WMCVaR', float('nan')):.2f}",
-        "worst_p_max_dev": f"{risk.get('worst_p_max_dev', float('nan')):.6f}",
-        "engine":               st.get("engine", "NA"),
-        "total_cuts":           st.get("cuts_added", "NA"),
-        "seed_cuts":            st.get("seed_cuts_added", "NA"),
-        "lazy_cuts":            st.get("lazy_cuts_added", "NA"),
-        "user_cuts":            st.get("user_cuts_added", "NA"),
-        "root_seed_iters_done": st.get("root_seed_iters_done", "NA"),
-        "root_seed_lb":         st.get("root_seed_lb", "NA"),
-        "root_seed_stop_reason": st.get("root_seed_stop_reason", "NA"),
-        "root_seed_time_s":     st.get("root_seed_time", "NA"),
-        "root_cut_rounds_done": st.get("root_cut_rounds_done", "NA"),
-        "parallel_oracles":     st.get("parallel_oracles", "NA"),
-        "oracle_solves":        st.get("oracle_solves", "NA"),
-        "incumbent_evals":      st.get("incumbent_evals", "NA"),
-        "callback_time_s":      st.get("callback_time", "NA"),
-        "solver_status":        st.get("solver_status", "NA"),
+        "WMCVaR":     f"{risk.get('WMCVaR', float('nan')):.2f}"
+                      if "WMCVaR" in risk else "NA",
+        "worst_p_max_dev": f"{risk.get('worst_p_max_dev', float('nan')):.6f}"
+                           if "worst_p_max_dev" in risk else "NA",
+        "engine":        st.get("engine", "NA"),
+        "total_cuts":    st.get("cuts_added", "NA"),
+        "oracle_solves": st.get("oracle_solves", "NA"),
+        "solver_status": st.get("solver_status", "NA"),
         "status": "OK",
     })
     row.update(first_stage_totals(fs))
-    save_first_stage_json(test_id, fs)
 
-    print(f"  -> OK obj={row['obj_value']} gap={row['gap_pct']}% "
-          f"cpu={row['cpu_s']}s opened={row['n_opened_ccp']}")
+
+def _run_case(runner, row: dict[str, Any], test_id: str) -> dict[str, Any]:
+    """共用外框：log 快照/搬移、計時、例外處理。runner() 回傳 (model, summary)。"""
+    logs_before = snapshot_logs()
+    wall_start = time.time()
+    try:
+        try:
+            with (
+                temporary_config(),
+                patched_generate_data(),
+                patched_generate_scenarios(),
+            ):
+                model, summary = runner()
+        finally:
+            log_path = move_log_to_subdir(newest_created_log(logs_before))
+            row["log_path"] = str(log_path) if log_path else "NA"
+            row["wall_s"] = f"{time.time() - wall_start:.2f}"
+    except Exception as exc:  # noqa: BLE001
+        row["status"] = "FAIL"
+        row["note"] = f"{type(exc).__name__}: {exc}"
+        print(f"  -> FAIL: {row['note']}")
+        if STOP_ON_ERROR:
+            raise
+        return row
+    if model is None or summary is None:
+        row["status"] = "FAIL"
+        row["note"] = "no feasible solution (see log)"
+        print(f"  -> FAIL: {row['note']}")
+        return row
+    _fill_common(row, model, summary)
+    save_first_stage_json(test_id, summary.get("first_stage"))
+    print(f"  -> OK obj={row['obj_value']} gap={row['gap_pct']}% cpu={row['cpu_s']}s")
+    return row
+
+
+def run_mcvar_baseline(mcvar_module: Any, counts: dict[str, int]) -> dict[str, Any]:
+    test_id = f"pdr_mcvar_a{RISK_ALPHA_FIXED}_l{RISK_LAMBDA_FIXED}".replace(".", "p")
+    row = blank_row()
+    row.update({
+        "test_id": test_id,
+        "model": "mcvar",
+        "ambiguity_set": "mcvar",
+        "alpha": RISK_ALPHA_FIXED,
+        "lambda": RISK_LAMBDA_FIXED,
+        "scope": 0.0,
+        "factor": f"MCVaR baseline, alpha={RISK_ALPHA_FIXED}, lambda={RISK_LAMBDA_FIXED}",
+        "I": counts["I"], "J": counts["J"], "H": counts["H"],
+        "S": BASE_SCENARIOS, "T": BASE_TIME_PERIODS,
+        "PDR_pct": 0.0,
+        "status": "RUNNING", "note": "",
+    })
+    print(f"\n[baseline] {test_id} | S={BASE_SCENARIOS}, gap={MIP_GAP}")
+    return _run_case(
+        lambda: mcvar_module.run_mcvar_model(
+            scenario_size=BASE_SCENARIOS,
+            sample_ratio=BASE_SAMPLE_RATIO,
+            time_limit=TIME_LIMIT,
+            mip_gap=MIP_GAP,
+            alpha=RISK_ALPHA_FIXED,
+            lam=RISK_LAMBDA_FIXED,
+            compute_kpis=COMPUTE_KPIS,
+        ),
+        row, test_id,
+    )
+
+
+def run_dro_case(dro_module: Any, run_idx: int, total: int, aset: str,
+                 scope: float, counts: dict[str, int],
+                 baseline_obj: float | None) -> dict[str, Any]:
+    test_id = f"pdr_{aset}_e{scope}".replace(".", "p")
+    row = blank_row()
+    row.update({
+        "test_id": test_id,
+        "model": f"dro_{aset}",
+        "ambiguity_set": aset,
+        "alpha": RISK_ALPHA_FIXED,
+        "lambda": RISK_LAMBDA_FIXED,
+        "scope": scope,
+        "factor": f"{aset}, {SCOPE_SYMBOL[aset]}={scope:g}",
+        "I": counts["I"], "J": counts["J"], "H": counts["H"],
+        "S": BASE_SCENARIOS, "T": BASE_TIME_PERIODS,
+        "status": "RUNNING", "note": "",
+    })
+    print(f"\n[{run_idx}/{total}] {test_id} | scope={scope:g}")
+    row = _run_case(
+        lambda: dro_module.run_dro_model(
+            ambiguity_set=aset,
+            scenario_size=BASE_SCENARIOS,
+            sample_ratio=BASE_SAMPLE_RATIO,
+            time_limit=TIME_LIMIT,
+            mip_gap=MIP_GAP,
+            alpha=RISK_ALPHA_FIXED,
+            lam=RISK_LAMBDA_FIXED,
+            scope=scope,
+            compute_kpis=COMPUTE_KPIS,
+        ),
+        row, test_id,
+    )
+    if row["status"] == "OK" and baseline_obj:
+        pdr = (float(row["obj_value"]) - baseline_obj) / baseline_obj * 100.0
+        row["PDR_pct"] = f"{pdr:.4f}"
+        gap_tol = (float(row["gap_pct"]) + MIP_GAP * 100.0)
+        if pdr < -gap_tol:
+            row["note"] = (row["note"] + " " if row["note"] else "") + \
+                "PDR<0 超出 gap 容差：請調緊 MIP_GAP 重跑"
+            print(f"  [WARN] PDR={pdr:.4f}% < 0 超出 gap 容差")
+        print(f"  -> PDR = {pdr:.4f}%")
     return row
 
 
 # =============================================================================
-# Excel export（六分頁：三明細 + 三矩陣）
+# Excel export（四分頁：三明細 + PDR_table 論文格式）
 # =============================================================================
 XLSX_DETAIL_COLUMNS = [
     ("factor",               "factor"),
@@ -456,43 +469,25 @@ XLSX_DETAIL_COLUMNS = [
     ("Nodes",                "nodes"),
     ("Iteration",            "iterations"),
     ("Final Gap(%)",         "gap_pct"),
+    ("scope",                "scope"),
+    ("PDR(%)",               "PDR_pct"),
     ("alpha",                "alpha"),
     ("lambda",               "lambda"),
-    ("scope",                "scope"),
     ("Opened CCPs",          "n_opened_ccp"),
     ("Sum V",                "sum_V"),
     ("Sum U",                "sum_U"),
     ("Sum Y",                "sum_Y"),
-    ("First Stage Cost",     "first_stage_cost"),
     ("E[Q] (p0)",            "expected_Q"),
-    ("VaR (phi*)",           "VaR_phi"),
     ("CVaR (p0)",            "CVaR"),
     ("MCVaR (p0)",           "MCVaR"),
     ("WMCVaR",               "WMCVaR"),
     ("worst_p_max_dev",      "worst_p_max_dev"),
-    ("Total Cuts",           "total_cuts"),
-    ("Oracle Solves",        "oracle_solves"),
     ("Solver Status",        "solver_status"),
     ("Status",               "status"),
 ]
 
 _TEXT_KEYS = ("factor", "first_stage_decision", "engine", "solver_status",
-              "status", "root_seed_stop_reason", "log_path", "note",
-              "ambiguity_set", "test_id")
-
-
-def _matrix_value(rows: list[dict[str, Any]], aset: str, alpha: float,
-                  lam: float, key: str) -> Any:
-    for row in rows:
-        if (row.get("ambiguity_set") == aset
-                and row.get("alpha") == alpha and row.get("lambda") == lam):
-            if row.get("status") != "OK":
-                return row.get("status", "NA")
-            try:
-                return float(row.get(key))
-            except (TypeError, ValueError):
-                return row.get(key, "NA")
-    return None  # not run yet
+              "status", "log_path", "note", "ambiguity_set", "test_id", "model")
 
 
 def export_xlsx(rows: list[dict[str, Any]], xlsx_path: Path) -> None:
@@ -500,6 +495,7 @@ def export_xlsx(rows: list[dict[str, Any]], xlsx_path: Path) -> None:
     try:
         from openpyxl import Workbook
         from openpyxl.styles import Alignment, Font, PatternFill
+        from openpyxl.utils import get_column_letter
     except ImportError:
         print("  [xlsx] openpyxl 未安裝，略過 Excel 匯出（pip install openpyxl）")
         return
@@ -509,8 +505,9 @@ def export_xlsx(rows: list[dict[str, Any]], xlsx_path: Path) -> None:
         wb.remove(wb.active)
         header_fill = PatternFill("solid", fgColor="2E74B5")
         header_font = Font(bold=True, color="FFFFFF")
+        baseline = next((r for r in rows if r.get("model") == "mcvar"), None)
 
-        # ---- 三個明細分頁 -------------------------------------------------
+        # ---- 三個明細分頁（第一列 = MCVaR baseline）------------------------
         for aset in AMBIGUITY_SETS:
             ws = wb.create_sheet(aset)
             for col_idx, (title, _key) in enumerate(XLSX_DETAIL_COLUMNS, start=1):
@@ -519,10 +516,10 @@ def export_xlsx(rows: list[dict[str, Any]], xlsx_path: Path) -> None:
                 cell.font = header_font
                 cell.alignment = Alignment(horizontal="center",
                                            vertical="center", wrap_text=True)
-            r_idx = 2
-            for row in rows:
-                if row.get("ambiguity_set") != aset:
-                    continue
+            sheet_rows = ([baseline] if baseline else []) + [
+                r for r in rows if r.get("ambiguity_set") == aset
+            ]
+            for r_idx, row in enumerate(sheet_rows, start=2):
                 for col_idx, (_title, key) in enumerate(XLSX_DETAIL_COLUMNS, start=1):
                     value = row.get(key, "NA")
                     if key not in _TEXT_KEYS:
@@ -533,35 +530,57 @@ def export_xlsx(rows: list[dict[str, Any]], xlsx_path: Path) -> None:
                     cell = ws.cell(row=r_idx, column=col_idx, value=value)
                     if key == "first_stage_decision":
                         cell.alignment = Alignment(wrap_text=True, vertical="top")
-                r_idx += 1
             ws.column_dimensions["A"].width = 30
-            ws.column_dimensions["H"].width = 62   # First Stage Decision
+            ws.column_dimensions["H"].width = 62
 
-        # ---- 三個矩陣分頁（Jin et al. Table 4 格式）-----------------------
-        blocks = [("obj_value", "obj_value"), ("CPU Time(s)", "cpu_s"),
-                  ("Final Gap(%)", "gap_pct")]
-        for aset in AMBIGUITY_SETS:
-            ws = wb.create_sheet(f"{aset}_matrix")
-            r = 1
-            for block_title, key in blocks:
-                cell = ws.cell(row=r, column=1, value=block_title)
-                cell.font = Font(bold=True)
-                for c_idx, lam in enumerate(LAMBDA_VALUES, start=2):
-                    cell = ws.cell(row=r, column=c_idx, value=f"λ = {lam:g}")
-                    cell.fill = header_fill
-                    cell.font = header_font
-                    cell.alignment = Alignment(horizontal="center")
-                r += 1
-                for alpha in ALPHA_VALUES:
-                    ws.cell(row=r, column=1, value=f"α = {alpha:g}").font = Font(bold=True)
-                    for c_idx, lam in enumerate(LAMBDA_VALUES, start=2):
-                        val = _matrix_value(rows, aset, alpha, lam, key)
-                        ws.cell(row=r, column=c_idx, value=val)
-                    r += 1
-                r += 1   # 區塊間空一列
-            ws.column_dimensions["A"].width = 14
-            for c_idx in range(2, len(LAMBDA_VALUES) + 2):
-                ws.column_dimensions[chr(ord("A") + c_idx - 1)].width = 16
+        # ---- PDR_table（Jin et al. Table 6 論文格式）-----------------------
+        ws = wb.create_sheet("PDR_table")
+        group_titles = [("Box ambiguity set", "ω"),
+                        ("Ellipsoidal ambiguity set", "a_E"),
+                        ("Polyhedral ambiguity set", "a_P")]
+        for g_idx, (title, sym) in enumerate(group_titles):
+            c0 = 1 + g_idx * 2
+            ws.merge_cells(start_row=1, start_column=c0, end_row=1, end_column=c0 + 1)
+            cell = ws.cell(row=1, column=c0, value=title)
+            cell.fill = header_fill
+            cell.font = header_font
+            cell.alignment = Alignment(horizontal="center")
+            ws.cell(row=2, column=c0, value=sym).font = Font(bold=True)
+            ws.cell(row=2, column=c0 + 1, value="PDR").font = Font(bold=True)
+        n_max = max(len(v) for v in SCOPE_VALUES.values())
+        for i in range(n_max):
+            for g_idx, aset in enumerate(AMBIGUITY_SETS):
+                c0 = 1 + g_idx * 2
+                scopes = SCOPE_VALUES[aset]
+                if i >= len(scopes):
+                    continue
+                scope = scopes[i]
+                ws.cell(row=3 + i, column=c0, value=scope)
+                match = next(
+                    (r for r in rows
+                     if r.get("ambiguity_set") == aset and r.get("scope") == scope),
+                    None,
+                )
+                if match is None:
+                    val = None
+                elif match.get("status") != "OK":
+                    val = match.get("status", "NA")
+                else:
+                    try:
+                        val = f"{float(match['PDR_pct']):.4f}%"
+                    except (TypeError, ValueError):
+                        val = "NA"
+                ws.cell(row=3 + i, column=c0 + 1, value=val)
+        note_row = 4 + n_max
+        base_txt = "NA" if baseline is None else baseline.get("obj_value", "NA")
+        ws.cell(row=note_row, column=1, value=(
+            f"MCVaR baseline obj = {base_txt} "
+            f"(alpha={RISK_ALPHA_FIXED}, lambda={RISK_LAMBDA_FIXED}, "
+            f"S={BASE_SCENARIOS}, mip_gap={MIP_GAP}); "
+            f"PDR = (DRO* - MCVaR*) / MCVaR*"
+        ))
+        for c in range(1, 7):
+            ws.column_dimensions[get_column_letter(c)].width = 14
 
         wb.save(xlsx_path)
     except Exception as exc:  # noqa: BLE001
@@ -569,63 +588,14 @@ def export_xlsx(rows: list[dict[str, Any]], xlsx_path: Path) -> None:
 
 
 # =============================================================================
-# Console 矩陣與單調性檢查
-# =============================================================================
-def print_matrices(rows: list[dict[str, Any]]) -> None:
-    for aset in AMBIGUITY_SETS:
-        print("\n" + "=" * 70)
-        print(f"OBJECTIVE VALUE MATRIX — {aset} ambiguity set "
-              f"(scope={SCOPES[aset]})")
-        header = "          " + "".join(f"λ = {lam:<12g}" for lam in LAMBDA_VALUES)
-        print(header)
-        for alpha in ALPHA_VALUES:
-            cells = []
-            for lam in LAMBDA_VALUES:
-                val = _matrix_value(rows, aset, alpha, lam, "obj_value")
-                if isinstance(val, float):
-                    cells.append(f"{val:<16.2f}")
-                else:
-                    cells.append(f"{str(val):<16s}")
-            print(f"α = {alpha:<6g}" + "".join(cells))
-
-
-def monotonicity_warnings(rows: list[dict[str, Any]]) -> list[str]:
-    """趨勢檢查：固定 α 時 obj 隨 λ 遞增、固定 λ 時隨 α 遞增（容差 = gap）。"""
-    warnings = []
-    for aset in AMBIGUITY_SETS:
-        for alpha in ALPHA_VALUES:
-            vals = [_matrix_value(rows, aset, alpha, lam, "obj_value")
-                    for lam in LAMBDA_VALUES]
-            nums = [v for v in vals if isinstance(v, float)]
-            for i in range(1, len(nums)):
-                tol = abs(nums[i]) * MIP_GAP + abs(nums[i - 1]) * MIP_GAP
-                if nums[i] < nums[i - 1] - tol:
-                    warnings.append(
-                        f"{aset} α={alpha}: obj 隨 λ 下降超過 gap 容差 "
-                        f"({nums[i - 1]:.2f} -> {nums[i]:.2f})"
-                    )
-        for lam in LAMBDA_VALUES:
-            vals = [_matrix_value(rows, aset, alpha, lam, "obj_value")
-                    for alpha in ALPHA_VALUES]
-            nums = [v for v in vals if isinstance(v, float)]
-            for i in range(1, len(nums)):
-                tol = abs(nums[i]) * MIP_GAP + abs(nums[i - 1]) * MIP_GAP
-                if nums[i] < nums[i - 1] - tol:
-                    warnings.append(
-                        f"{aset} λ={lam}: obj 隨 α 下降超過 gap 容差 "
-                        f"({nums[i - 1]:.2f} -> {nums[i]:.2f})"
-                    )
-    return warnings
-
-
-# =============================================================================
 # Main
 # =============================================================================
 def main() -> None:
-    if SCOPES["box"] > 1.0 / BASE_SCENARIOS + 1e-12:
+    bad = [s for s in SCOPE_VALUES["box"] if s > 1.0 / BASE_SCENARIOS + 1e-12]
+    if bad:
         raise ValueError(
-            f"box scope {SCOPES['box']} > 1/S = {1.0 / BASE_SCENARIOS:.6f}；"
-            f"等權重下 box ambiguity set 需 ε̄_B ≤ 1/S，請調小 SCOPES['box']。"
+            f"box scopes {bad} > 1/S = {1.0 / BASE_SCENARIOS:.6f}；"
+            f"等權重下 box ambiguity set 需 ε̄_B ≤ 1/S。"
         )
 
     timestamp = dt.datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -633,44 +603,73 @@ def main() -> None:
     csv_path  = RESULT_DIR / f"{RESULT_PREFIX}_raw_{timestamp}.csv"
     xlsx_path = RESULT_DIR / f"{RESULT_PREFIX}_{timestamp}.xlsx"
 
-    cases = [(aset, alpha, lam)
-             for aset in AMBIGUITY_SETS
-             for alpha in ALPHA_VALUES
-             for lam in LAMBDA_VALUES]
+    cases = [(aset, scope)
+             for aset in AMBIGUITY_SETS for scope in SCOPE_VALUES[aset]]
     counts = estimate_counts()
 
     print("=" * 70)
-    print("BATCH DRO RISK-PARAMETER EXPERIMENT (實驗一)")
+    print("BATCH PDR EXPERIMENT (實驗二)")
     print("=" * 70)
-    print(f"sets={AMBIGUITY_SETS}")
-    print(f"alpha={ALPHA_VALUES}")
-    print(f"lambda={LAMBDA_VALUES}")
-    print(f"scopes={SCOPES}")
-    print(f"S={BASE_SCENARIOS} T={BASE_TIME_PERIODS} "
-          f"sample_ratio={BASE_SAMPLE_RATIO} ccp={BASE_CCP_SAMPLE_SIZE}")
-    print(f"time_limit={TIME_LIMIT} mip_gap={MIP_GAP} cases={len(cases)}")
+    print(f"alpha=lambda={RISK_ALPHA_FIXED}/{RISK_LAMBDA_FIXED}")
+    print(f"scopes={SCOPE_VALUES}")
+    print(f"S={BASE_SCENARIOS} T={BASE_TIME_PERIODS} mip_gap={MIP_GAP} "
+          f"time_limit={TIME_LIMIT}")
+    print(f"cases=1 baseline + {len(cases)} DRO")
     print(f"CSV   : {csv_path}")
     print(f"Excel : {xlsx_path}")
 
-    dro_module = load_dro_module()
+    mcvar_module = load_portal(MCVAR_MODEL_PATH, "mcvar_bbc_portal")
+    dro_module   = load_portal(DRO_MODEL_PATH, "dro_bbc_portal")
+
     rows: list[dict[str, Any]] = []
-    for idx, (aset, alpha, lam) in enumerate(cases, start=1):
-        row = run_one_case(dro_module, idx, len(cases), aset, alpha, lam, counts)
+    base_row = run_mcvar_baseline(mcvar_module, counts)
+    rows.append(base_row)
+    write_results(csv_path, rows)
+    export_xlsx(rows, xlsx_path)
+
+    baseline_obj = None
+    if base_row["status"] == "OK":
+        baseline_obj = float(base_row["obj_value"])
+    else:
+        print("[WARN] MCVaR baseline 失敗，後續 PDR 無法計算（只記 DRO obj）。")
+
+    for idx, (aset, scope) in enumerate(cases, start=1):
+        row = run_dro_case(dro_module, idx, len(cases), aset, scope,
+                           counts, baseline_obj)
         rows.append(row)
-        write_results(csv_path, rows)     # 每 case 跑完立即重寫（可中斷續看）
+        write_results(csv_path, rows)
         export_xlsx(rows, xlsx_path)
 
-    print_matrices(rows)
-    warnings = monotonicity_warnings(rows)
-    print("\n" + "-" * 70)
+    # ---- console PDR 表與單調性檢查 ----------------------------------------
+    print("\n" + "=" * 70)
+    print(f"PDR SUMMARY (alpha=lambda={RISK_ALPHA_FIXED}; "
+          f"baseline obj={baseline_obj})")
+    warnings = []
+    for aset in AMBIGUITY_SETS:
+        print(f"\n  {aset}:")
+        prev = None
+        for scope in SCOPE_VALUES[aset]:
+            match = next((r for r in rows if r.get("ambiguity_set") == aset
+                          and r.get("scope") == scope), None)
+            pdr_txt = "NA"
+            if match and match.get("status") == "OK":
+                try:
+                    pdr = float(match["PDR_pct"])
+                    pdr_txt = f"{pdr:.4f}%"
+                    if prev is not None and pdr < prev - (2 * MIP_GAP * 100.0):
+                        warnings.append(
+                            f"{aset}: PDR 隨 scope 下降超出 gap 容差 "
+                            f"({prev:.4f}% -> {pdr:.4f}% @ scope={scope:g})"
+                        )
+                    prev = pdr
+                except (TypeError, ValueError):
+                    pass
+            print(f"    {SCOPE_SYMBOL[aset]:>10s} = {scope:<10g} PDR = {pdr_txt}")
     n_ok = sum(1 for r in rows if r.get("status") == "OK")
+    print("\n" + "-" * 70)
     print(f"Done: {n_ok}/{len(rows)} cases OK.")
-    if warnings:
-        print("趨勢警告（obj 未隨 α/λ 單調遞增，超出 gap 容差）：")
-        for w in warnings:
-            print(f"  [WARN] {w}")
-    else:
-        print("趨勢檢查通過：obj 隨 α、λ 單調遞增（gap 容差內）。")
+    for w in warnings:
+        print(f"  [WARN] {w}")
     print(f"CSV   : {csv_path}")
     print(f"Excel : {xlsx_path}")
 

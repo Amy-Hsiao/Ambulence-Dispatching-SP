@@ -75,6 +75,7 @@ BENDERS_ROOT_SEED_LB_ABS_TOL = 1e-3   # 保留相容欄位；Papadakos seeding �
 BENDERS_ROOT_SEED_LB_REL_TOL = 5e-4   # seeded LB 單輪相對改善 < 0.05% 視為停滯
 BENDERS_ROOT_SEED_ROUND_HEUR_FREQ = 10
 BENDERS_PAPADAKOS_BLEND   = 0.5
+BENDERS_PARETO_ENABLED    = True    # False = seeding/user cuts 僅加 standard cut，不建 core point
 BENDERS_PROGRESS_BOUND_FLOOR = -1e50
 BENDERS_ROOT_CUT_ROUNDS  = 15      # root 節點 callback 分數解 user cut 輪數（0 = 關閉 root cuts）
 BENDERS_USE_USER_CUTS    = True    # True: root 節點分數解 user cut

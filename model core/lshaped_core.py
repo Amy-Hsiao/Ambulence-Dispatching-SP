@@ -822,6 +822,9 @@ def solve_bbc(
     parallel_oracles: int | None = None,
     use_user_cuts: bool | None = None,
     ev_warm_start: bool | None = None,
+    pareto_enabled: bool | None = None,
+    diagnostic_stop_after_root_seeding: bool = False,
+    diagnostic_stop_after_first_incumbent: bool = False,
     verbose: bool = True,
     risk_cfg: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
@@ -834,6 +837,9 @@ def solve_bbc(
     risk_cfg（plan/08）：None = 原 SP（行為與舊版完全相同）；"mcvar"/"dro_*"
     時 master 目標式含風險層，所有 UB / incumbent / heuristic 評估一律以
     risk_core.second_stage_objective_from_Q 計算，cut 邏輯與 oracle 不變。
+
+    pareto_enabled 預設讀 config.BENDERS_PARETO_ENABLED（預設 True）；False
+    時 root seeding 與 root user cuts 只建立 standard cuts。
     """
     if not S_selected:
         raise ValueError("S_selected must contain at least one scenario.")
@@ -867,6 +873,11 @@ def solve_bbc(
         config.BENDERS_EV_WARM_START
         if ev_warm_start is None
         else bool(ev_warm_start)
+    )
+    pareto_enabled = (
+        getattr(config, "BENDERS_PARETO_ENABLED", True)
+        if pareto_enabled is None
+        else bool(pareto_enabled)
     )
     papadakos_blend = float(getattr(config, "BENDERS_PAPADAKOS_BLEND", 0.5))
     rounding_heur_freq = max(1, int(getattr(config, "BENDERS_ROOT_SEED_ROUND_HEUR_FREQ", 10)))
@@ -944,7 +955,8 @@ def solve_bbc(
     cache_hits = 0
     cache_misses = 0
     last_progress_print = start_time
-    core_point = _build_initial_core_point(instance)
+    # Pareto 關閉時不要建 core point，也不要做額外的 Pareto oracle 求解。
+    core_point = _build_initial_core_point(instance) if pareto_enabled else None
     evaluation_cache: dict[
         tuple[Any, ...],
         tuple[float, dict[str, float], dict[str, Any]],
@@ -953,6 +965,7 @@ def solve_bbc(
     user_cut_signatures: set[tuple[Any, ...]] = set()
     event_log: list[dict[str, Any]] = []
     cleanup_done = False
+    diagnostic_first_incumbent_reached = False
 
     def cleanup_oracle_resources() -> None:
         nonlocal cleanup_done
@@ -1035,7 +1048,7 @@ def solve_bbc(
         eval_fs: dict[str, Any],
         standard_q_by_s: dict[str, float],
         standard_cut_by_s: dict[str, Any],
-        pareto_cut_by_s: dict[str, Any],
+        pareto_cut_by_s: dict[str, Any] | None,
         signature_store: set[tuple[Any, ...]],
         add_cut: Any,
         name_prefix: str,
@@ -1056,18 +1069,19 @@ def solve_bbc(
                 signature_store.add(standard_sig)
                 cuts_this_round += 1
 
-            pareto_cut = pareto_cut_by_s[s]
-            pareto_rhs = oracles[s].cut_value_at(pareto_cut, eval_fs)
-            pareto_tol = config.BENDERS_CUT_VIOL_REL_TOL * max(1.0, abs(pareto_rhs))
-            pareto_sig = _cut_signature(s, pareto_cut)
-            if pareto_rhs > theta_values[s] + pareto_tol and pareto_sig not in signature_store:
-                add_cut(
-                    s,
-                    pareto_cut,
-                    f"{name_prefix}_{iteration_label}_{s}_pareto",
-                )
-                signature_store.add(pareto_sig)
-                cuts_this_round += 1
+            if pareto_cut_by_s is not None:
+                pareto_cut = pareto_cut_by_s[s]
+                pareto_rhs = oracles[s].cut_value_at(pareto_cut, eval_fs)
+                pareto_tol = config.BENDERS_CUT_VIOL_REL_TOL * max(1.0, abs(pareto_rhs))
+                pareto_sig = _cut_signature(s, pareto_cut)
+                if pareto_rhs > theta_values[s] + pareto_tol and pareto_sig not in signature_store:
+                    add_cut(
+                        s,
+                        pareto_cut,
+                        f"{name_prefix}_{iteration_label}_{s}_pareto",
+                    )
+                    signature_store.add(pareto_sig)
+                    cuts_this_round += 1
         return cuts_this_round
 
     if ev_warm_start:
@@ -1126,7 +1140,8 @@ def solve_bbc(
                 print("=" * 70)
                 print(
                     "B&BC ROOT SEEDING "
-                    f"(Papadakos dual-track, max {root_seed_iters} LP iterations, "
+                    f"({'Papadakos dual-track' if pareto_enabled else 'standard cuts'}, "
+                    f"max {root_seed_iters} LP iterations, "
                     f"stop after {stall_limit} rounds with LB improvement < {lb_rel_tol * 100:.4f}%)"
                 )
                 print("=" * 70)
@@ -1179,8 +1194,11 @@ def solve_bbc(
 
                 fs = _extract_first_stage(mv, J, H, round_values=False)
                 _, q_by_s, cut_by_s, cache_hit = evaluate_first_stage(fs)
-                core_point = _blend_core_point(instance, core_point, fs, blend=papadakos_blend)
-                _, _, pareto_cut_by_s, pareto_cache_hit = evaluate_first_stage(core_point)
+                pareto_cut_by_s = None
+                pareto_cache_hit = False
+                if pareto_enabled:
+                    core_point = _blend_core_point(instance, core_point, fs, blend=papadakos_blend)
+                    _, _, pareto_cut_by_s, pareto_cache_hit = evaluate_first_stage(core_point)
                 root_seed_iters_done += 1
                 cuts_this_iter = 0
 
@@ -1294,6 +1312,48 @@ def solve_bbc(
         cleanup_oracle_resources()
         raise
 
+    if diagnostic_stop_after_root_seeding:
+        oracle_solves = sum(oracle.n_solves for oracle in oracles.values())
+        cleanup_oracle_resources()
+        if verbose:
+            print(
+                "[DIAGNOSTIC STOP] root seeding completed without exception | "
+                f"iters={root_seed_iters_done}/{root_seed_iters} "
+                f"seeded_LB={root_seed_lb} oracle_solves={oracle_solves}"
+            )
+        return {
+            "obj_value": best_ub if best_ub < float("inf") else None,
+            "best_ub": best_ub if best_ub < float("inf") else None,
+            "best_lb": root_seed_lb,
+            "gap_pct": None,
+            "runtime": time.time() - start_time,
+            "cuts_added": cuts_added,
+            "seed_cuts_added": seed_cuts_added,
+            "user_cuts_added": 0,
+            "lazy_cuts_added": 0,
+            "root_seed_iters": root_seed_iters,
+            "root_seed_iters_done": root_seed_iters_done,
+            "root_seed_lb": root_seed_lb,
+            "root_seed_stop_reason": root_seed_stop_reason,
+            "root_seed_time": root_seed_time,
+            "root_cut_rounds": root_cut_rounds,
+            "root_cut_rounds_done": 0,
+            "use_user_cuts": use_user_cuts,
+            "pareto_enabled": pareto_enabled,
+            "parallel_oracles": parallel_oracles,
+            "oracle_solves": oracle_solves,
+            "incumbent_evals": 0,
+            "callback_time": 0.0,
+            "first_stage": best_fs,
+            "scenario_q": best_q,
+            "status": "DIAGNOSTIC_ROOT_SEED_OK",
+            "diagnostic_stop": "after_root_seeding",
+            "diagnostic_first_incumbent_reached": False,
+            "history": event_log,
+            "master": master,
+            "vars": mv,
+        }
+
     if verbose:
         print("=" * 70)
         print("BRANCH-AND-BENDERS-CUT")
@@ -1309,6 +1369,7 @@ def solve_bbc(
         nonlocal best_ub, best_fs, best_q, core_point
         nonlocal cuts_added, lazy_cuts_added, user_cuts_added
         nonlocal incumbent_evals, root_cut_rounds_done, callback_time
+        nonlocal diagnostic_first_incumbent_reached
 
         if where == GRB.Callback.MIP:
             maybe_print_progress(model, where)
@@ -1334,8 +1395,11 @@ def solve_bbc(
                 from_callback=model.cbGetNodeRel,
             )
             _, q_by_s, cut_by_s, cache_hit = evaluate_first_stage(fs)
-            core_point = _blend_core_point(instance, core_point, fs, blend=papadakos_blend)
-            _, _, pareto_cut_by_s, pareto_cache_hit = evaluate_first_stage(core_point)
+            pareto_cut_by_s = None
+            pareto_cache_hit = False
+            if pareto_enabled:
+                core_point = _blend_core_point(instance, core_point, fs, blend=papadakos_blend)
+                _, _, pareto_cut_by_s, pareto_cache_hit = evaluate_first_stage(core_point)
             root_cut_rounds_done += 1
             cuts_this_node = 0
 
@@ -1434,6 +1498,14 @@ def solve_bbc(
                 "cache_hit": cache_hit,
                 "runtime": time.time() - start_time,
             })
+            if diagnostic_stop_after_first_incumbent:
+                diagnostic_first_incumbent_reached = True
+                if verbose:
+                    print(
+                        "[DIAGNOSTIC STOP] first MIPSOL oracle evaluation completed | "
+                        f"UB={true_ub:.2f} lazy_cuts={cuts_this_sol}"
+                    )
+                model.terminate()
 
     remaining = time_limit - (time.time() - start_time)
     master.setParam("TimeLimit", max(1.0, remaining))
@@ -1474,6 +1546,7 @@ def solve_bbc(
         print(
             f"cuts_added={cuts_added} user_cuts={user_cuts_added} "
             f"lazy_cuts={lazy_cuts_added} seed_cuts={seed_cuts_added} "
+            f"pareto_enabled={pareto_enabled} "
             f"rootSeedIters={root_seed_iters_done}/{root_seed_iters} "
             f"seeded_LB={root_seed_lb if root_seed_lb is not None else 'NA'} "
             f"rootSeedStop={root_seed_stop_reason} "
@@ -1503,6 +1576,7 @@ def solve_bbc(
         "root_cut_rounds": root_cut_rounds,
         "root_cut_rounds_done": root_cut_rounds_done,
         "use_user_cuts": use_user_cuts,
+        "pareto_enabled": pareto_enabled,
         "parallel_oracles": parallel_oracles,
         "cache_hits": cache_hits,
         "cache_misses": cache_misses,
@@ -1512,6 +1586,11 @@ def solve_bbc(
         "first_stage": best_fs,
         "scenario_q": best_q,
         "status": status,
+        "diagnostic_stop": (
+            "after_first_incumbent"
+            if diagnostic_first_incumbent_reached else None
+        ),
+        "diagnostic_first_incumbent_reached": diagnostic_first_incumbent_reached,
         "history": event_log,
         "master": master,
         "vars": mv,

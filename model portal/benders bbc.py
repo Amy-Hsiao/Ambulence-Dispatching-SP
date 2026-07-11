@@ -146,7 +146,7 @@ def _evaluate_kpis(instance, S_selected, norm_probs, best_fs, time_limit=300.0):
 
 
 def run_sp_model(scenario_size=None, sample_ratio=None, time_limit=None, mip_gap=None,
-                 compute_kpis=True):
+                 compute_kpis=True, compute_vss_evpi=True):
     scenario_size = config.SP_SCENARIO_SIZE if scenario_size is None else scenario_size
     sample_ratio = config.SP_SAMPLE_RATIO if sample_ratio is None else sample_ratio
     time_limit = config.SP_TIME_LIMIT if time_limit is None else time_limit
@@ -154,10 +154,12 @@ def run_sp_model(scenario_size=None, sample_ratio=None, time_limit=None, mip_gap
 
     log_path = _build_bbc_log_path(scenario_size, sample_ratio, time_limit, mip_gap)
     with logging_utils.tee_output(log_path):
-        return _run(scenario_size, sample_ratio, time_limit, mip_gap, compute_kpis)
+        return _run(scenario_size, sample_ratio, time_limit, mip_gap,
+                    compute_kpis, compute_vss_evpi)
 
 
-def _run(scenario_size, sample_ratio, time_limit, mip_gap, compute_kpis):
+def _run(scenario_size, sample_ratio, time_limit, mip_gap, compute_kpis,
+         compute_vss_evpi):
     wall_start = time.time()
     instance = config.generate_data(sample_ratio=sample_ratio)
     sets = instance["sets"]
@@ -178,6 +180,7 @@ def _run(scenario_size, sample_ratio, time_limit, mip_gap, compute_kpis):
             ("root_cut_rounds", getattr(config, "BENDERS_ROOT_CUT_ROUNDS", 0)),
             ("use_user_cuts", getattr(config, "BENDERS_USE_USER_CUTS", False)),
             ("ev_warm_start", getattr(config, "BENDERS_EV_WARM_START", True)),
+            ("pareto_enabled", getattr(config, "BENDERS_PARETO_ENABLED", True)),
             ("mip_focus", getattr(config, "BENDERS_MIPFOCUS", "default")),
             ("heuristics", getattr(config, "BENDERS_HEURISTICS", "default")),
             ("x_branch_priority_enabled", getattr(config, "BENDERS_X_BRANCH_PRIORITY_ENABLED", False)),
@@ -209,15 +212,18 @@ def _run(scenario_size, sample_ratio, time_limit, mip_gap, compute_kpis):
     norm_probs = {s: p / total_prob for s, p in raw_probs.items()}
 
     # ---- VSS / EVPI（與 extensive form 完全相同的呼叫，引擎無關）----------
-    summary = vss_evpi.compute_vss_evpi(
-        instance     = instance,
-        S_selected   = S_selected,
-        rp_best_lb   = rp_best_lb,
-        rp_best_ub   = rp_best_ub,
-        rp_gap       = rp_gap,
-        time_limit   = time_limit,
-        mip_gap      = mip_gap,
-    )
+    if compute_vss_evpi:
+        summary = vss_evpi.compute_vss_evpi(
+            instance=instance, S_selected=S_selected,
+            rp_best_lb=rp_best_lb, rp_best_ub=rp_best_ub, rp_gap=rp_gap,
+            time_limit=time_limit, mip_gap=mip_gap,
+        )
+    else:
+        summary = {
+            "VSS_pct": None, "EVPI_pct": None,
+            "objective": rp_best_ub, "best_lb": rp_best_lb,
+            "gap_pct": rp_gap, "first_stage": best_fs,
+        }
     summary["bbc_stats"] = {
         "engine":               "bbc",
         "multi_cut":            config.BENDERS_MULTI_CUT,
@@ -233,6 +239,8 @@ def _run(scenario_size, sample_ratio, time_limit, mip_gap, compute_kpis):
         "root_cut_rounds_done": result.get("root_cut_rounds_done"),
         "root_cut_rounds":      result.get("root_cut_rounds"),
         "use_user_cuts":        result.get("use_user_cuts"),
+        "pareto_enabled":       result.get("pareto_enabled"),
+        "parallel_oracles":     result.get("parallel_oracles"),
         "oracle_solves":        result.get("oracle_solves"),
         "incumbent_evals":      result.get("incumbent_evals"),
         "callback_time":        result.get("callback_time"),

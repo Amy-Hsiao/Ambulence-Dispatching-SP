@@ -28,9 +28,11 @@
 7. `07_VALIDATION_ACCEPTANCE_PROMPT.md`：補完整驗證、tiny baseline、回歸測試與最終交付檢查。
 8. `08_MCVAR_BBC_PROMPT.md`：SP + MCVaR（直接 B&BC + 既有 enhancement，不寫 extensive form）。
 9. `09_DRO_BBC_PROMPT.md`：SP + MCVaR + DRO（box / ellipsoidal / polyhedral 對偶重構，B&BC）。
-10. `10_RISK_EXPERIMENTS_PROMPT.md`：實驗一（DRO 三種 ambiguity set 的 α×λ 網格，輸出 Excel 三分頁）與批次調參入口 `run experiment/batch_risk_experiment.py`；後續實驗待實驗一確認後再計畫。
+10. `10_RISK_EXPERIMENTS_PROMPT.md`：實驗一（DRO 三種 ambiguity set 的 α×λ 網格，輸出 Excel 六分頁）與批次調參入口 `run experiment/batch_risk_experiment.py`。
+11. `11_PDR_EXPERIMENT_PROMPT.md`：實驗二（PDR = (DRO*−MCVaR*)/MCVaR*，scope 掃描，輸出 Excel 四分頁含論文格式 PDR 表）與入口 `run experiment/batch_pdr_experiment.py`。
+12. `12_ABLATION_EXPERIMENT_PROMPT.md`：實驗三（B&BC 加速策略 ablation：BBC→+WS→+RS→+UC→Full 五配置 × {SP, DRO-box} × S∈{30,50,100}，Excel 六分頁）；計畫已定，待使用者確認後實作 `run experiment/batch_ablation_experiment.py`。
 
-註：階段 8–10 例外於原則 6（風險模型直接用 Benders B&BC，經使用者明確要求）。
+註：階段 8–11 例外於原則 6（風險模型直接用 Benders B&BC，經使用者明確要求）。
 
 ## 每階段完成後的停止規則
 

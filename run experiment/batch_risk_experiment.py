@@ -2,23 +2,25 @@
 """
 Batch DRO risk-parameter experiment runner（實驗一，plan/10）。
 
-三種 ambiguity set × α × λ 網格掃描（模型 = SP + MCVaR + DRO，B&BC 引擎）。
+目前以 ellipsoidal-only 恢復模式執行 α × λ 網格（模型 = SP + MCVaR +
+DRO，B&BC 引擎）。第一個 case 成功後才繼續其餘網格；若失敗則保留當下
+CSV/Excel/log 並停止，避免浪費後續求解時間。
 This script is only a runner. It temporarily changes values in the imported
 config module while it runs each case, then restores them. It does not
 rewrite config.py and does not change the model core logic.
 
 輸出（experiment result/）：
 * raw CSV（來源真相，每 case 一列，逐 case 重寫）
-* Excel 六分頁：
-    - "box" / "ellipsoidal" / "polyhedral"：明細表（欄位同 stress test：
+* Excel（目前 ellipsoidal-only，輸出兩分頁）：
+    - "ellipsoidal"：明細表（欄位同 stress test：
       factor | I | J | H | S | T | obj_value | First Stage Decision |
       Best LB | Best UB | CPU Time(s) | num_vars | num_constrs | Nodes |
       Iteration | Final Gap(%) + risk/B&BC 統計欄）
-    - "box_matrix" / "ellipsoidal_matrix" / "polyhedral_matrix"：
+    - "ellipsoidal_matrix"：
       α（列）× λ（欄）的 obj_value 矩陣（Jin et al. Table 4 格式），
       下方另附 CPU Time 與 Final Gap 矩陣
 * first_stage/{test_id}.json：完整一階解（供 out-of-sample 等後續實驗重用）
-* console：每 case 一行摘要；全部結束後印出三個 α×λ 矩陣與單調性警告
+* console：每 case 一行摘要；全部結束後印出 ellipsoidal α×λ 矩陣與單調性警告
 """
 from __future__ import annotations
 
@@ -42,7 +44,7 @@ from typing import Any
 # =============================================================================
 
 # ── 實驗網格（Jin et al. 2024 Table 4 的 α × λ 組合）─────────────────────────
-AMBIGUITY_SETS = ["box", "ellipsoidal", "polyhedral"]
+AMBIGUITY_SETS = ["ellipsoidal"]
 ALPHA_VALUES   = [0.5, 0.6, 0.7, 0.8, 0.9]
 LAMBDA_VALUES  = [0.3, 0.5, 0.7, 0.9]
 
@@ -68,9 +70,10 @@ MIP_GAP      = 1e-4     # 正式論文表採 0.01% relative gap，降低參數�
 COMPUTE_KPIS = False    # 實驗一不需 KPI 重解（省時）；要 KPI 改 True
 
 # ── Output settings ──────────────────────────────────────────────────────────
-RESULT_PREFIX   = "DRO_alpha_lambda"
+RESULT_PREFIX   = "DRO_alpha_lambda_ellipsoidal"
 LOG_SUBDIR_NAME = "dro alpha lambda"
 STOP_ON_ERROR   = False   # 單一 case 失敗記 FAIL 續跑，不中斷整批
+REQUIRE_FIRST_CASE_SUCCESS = True  # 首 case 是正式規模 pilot；失敗就停止本批
 
 
 # =============================================================================
@@ -659,6 +662,12 @@ def main() -> None:
         rows.append(row)
         write_results(csv_path, rows)     # 每 case 跑完立即重寫（可中斷續看）
         export_xlsx(rows, xlsx_path)
+        if idx == 1 and REQUIRE_FIRST_CASE_SUCCESS and row.get("status") != "OK":
+            print("\n[ABORT] 第一個 ellipsoidal pilot 失敗；已保留 CSV/Excel/log，"
+                  "不執行其餘 19 cases。")
+            break
+        if idx == 1 and REQUIRE_FIRST_CASE_SUCCESS:
+            print("\n[PILOT PASS] 第一個 ellipsoidal case 成功，繼續其餘 19 cases。")
 
     print_matrices(rows)
     warnings = monotonicity_warnings(rows)

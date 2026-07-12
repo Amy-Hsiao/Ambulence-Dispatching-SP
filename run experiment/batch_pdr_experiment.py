@@ -5,6 +5,8 @@ Batch PDR experiment runner（實驗二，plan/11）。
 PDR = (DRO* − MCVaR*) / MCVaR*（Jin et al. 2024 式 41；baseline 是同 α、λ
 的 SP+MCVaR，不是純 SP）。固定 α = λ（預設 0.9），掃三種 ambiguity set 的
 scope。共 1（MCVaR baseline）+ 3 sets × len(scopes) 次求解。
+執行時先跑 ellipsoidal 最小 scope 作正式規模 pilot；成功才繼續其餘
+ellipsoidal、box、polyhedral，失敗則保留輸出後停止。
 
 This script is only a runner. It temporarily changes values in the imported
 config module while it runs each case, then restores them. It does not
@@ -73,6 +75,8 @@ COMPUTE_KPIS = False
 RESULT_PREFIX   = "DRO_PDR"
 LOG_SUBDIR_NAME = "dro pdr"
 STOP_ON_ERROR   = False
+ELLIPSOIDAL_PREFLIGHT_FIRST = True
+REQUIRE_FIRST_ELLIPSOIDAL_SUCCESS = True
 
 
 # =============================================================================
@@ -603,8 +607,13 @@ def main() -> None:
     csv_path  = RESULT_DIR / f"{RESULT_PREFIX}_raw_{timestamp}.csv"
     xlsx_path = RESULT_DIR / f"{RESULT_PREFIX}_{timestamp}.xlsx"
 
+    execution_sets = list(AMBIGUITY_SETS)
+    if ELLIPSOIDAL_PREFLIGHT_FIRST:
+        execution_sets = ["ellipsoidal"] + [
+            aset for aset in execution_sets if aset != "ellipsoidal"
+        ]
     cases = [(aset, scope)
-             for aset in AMBIGUITY_SETS for scope in SCOPE_VALUES[aset]]
+             for aset in execution_sets for scope in SCOPE_VALUES[aset]]
     counts = estimate_counts()
 
     print("=" * 70)
@@ -639,6 +648,16 @@ def main() -> None:
         rows.append(row)
         write_results(csv_path, rows)
         export_xlsx(rows, xlsx_path)
+        if (idx == 1 and ELLIPSOIDAL_PREFLIGHT_FIRST
+                and REQUIRE_FIRST_ELLIPSOIDAL_SUCCESS
+                and row.get("status") != "OK"):
+            print("\n[ABORT] 第一個 ellipsoidal PDR pilot 失敗；已保留 "
+                  "CSV/Excel/log，不執行後續 DRO cases。")
+            break
+        if (idx == 1 and ELLIPSOIDAL_PREFLIGHT_FIRST
+                and REQUIRE_FIRST_ELLIPSOIDAL_SUCCESS):
+            print("\n[PILOT PASS] 第一個 ellipsoidal PDR case 成功，"
+                  "繼續其餘 ellipsoidal、box、polyhedral cases。")
 
     # ---- console PDR 表與單調性檢查 ----------------------------------------
     print("\n" + "=" * 70)

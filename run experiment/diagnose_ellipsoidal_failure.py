@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """快速定位 full-size ellipsoidal B&BC 失敗階段。
 
-依序執行四個隔離測試；每個測試在 root seeding 或第一次 MIPSOL 後主動停止，
+先驗證原始完整 root-seeding 路徑，再執行四個隔離測試；每個測試在
+root seeding 或第一次 MIPSOL 後主動停止，
 不等待完整模型收斂。所有 stdout、stderr、例外 traceback 與結論寫入單一 log。
 正常實驗不會啟用 lshaped_core 的 diagnostic early-stop 參數。
 """
@@ -51,6 +52,17 @@ import risk_core  # noqa: E402
 
 
 TESTS = [
+    {
+        "id": "T0_original_root_seed",
+        "purpose": "原始 Pareto+parallel 配置跑一輪；直接驗證修正後完整加速路徑",
+        "root_seed_iters": 1,
+        "parallel_oracles": PARALLEL_ORACLES,
+        "use_user_cuts": True,
+        "root_cut_rounds": 15,
+        "pareto_enabled": True,
+        "stop_after_root": True,
+        "stop_after_incumbent": False,
+    },
     {
         "id": "T1_pareto_off",
         "purpose": "關閉 Pareto；判斷是否為 core-point/Pareto oracle",
@@ -198,8 +210,10 @@ def print_diagnosis(results: list[dict[str, Any]]) -> None:
     print("\n" + "#" * 88)
     print("AUTOMATIC DIAGNOSIS")
     print("#" * 88)
-    if passed("T1_pareto_off"):
-        print("T1 PASS：原失敗高度指向 Pareto core-point evaluation；standard root seeding 可行。")
+    if passed("T0_original_root_seed"):
+        print("T0 PASS：原始 Pareto+parallel root seeding 已通過；fractional WMCVaR 修正有效且加速路徑保留。")
+    elif passed("T1_pareto_off"):
+        print("T0 FAIL / T1 PASS：standard root seeding 可行，剩餘問題指向 Pareto core-point evaluation。")
     elif passed("T2_pareto_off_parallel1"):
         print("T1 FAIL / T2 PASS：高度指向 parallel oracle environment/thread 問題。")
     elif passed("T3_root_seeding_off"):
@@ -207,7 +221,7 @@ def print_diagnosis(results: list[dict[str, Any]]) -> None:
     elif passed("T4_root_seeding_and_usercuts_off"):
         print("T3 FAIL / T4 PASS：高度指向 root MIPNODE user cuts/Pareto evaluation。")
     else:
-        print("四項均未 PASS：問題位於共同路徑（EV、MIPSOL lazy oracle、license/數值）或 safety time limit。")
+        print("所有測試均未 PASS：問題位於共同路徑（EV、MIPSOL lazy oracle、license/數值）或 safety time limit。")
     print("\nPer-test summary:")
     for row in results:
         print(

@@ -30,7 +30,8 @@
 9. `09_DRO_BBC_PROMPT.md`：SP + MCVaR + DRO（box / ellipsoidal / polyhedral 對偶重構，B&BC）。
 10. `10_RISK_EXPERIMENTS_PROMPT.md`：實驗一（DRO 三種 ambiguity set 的 α×λ 網格，輸出 Excel 六分頁）與批次調參入口 `run experiment/batch_risk_experiment.py`。
 11. `11_PDR_EXPERIMENT_PROMPT.md`：實驗二（PDR = (DRO*−MCVaR*)/MCVaR*，scope 掃描，輸出 Excel 四分頁含論文格式 PDR 表）與入口 `run experiment/batch_pdr_experiment.py`。
-12. `12_ABLATION_EXPERIMENT_PROMPT.md`：實驗三（B&BC 加速策略 ablation：BBC→+WS→+RS→+UC→Full 五配置 × {SP, DRO-box} × S∈{30,50,100}，Excel 六分頁）；計畫已定，待使用者確認後實作 `run experiment/batch_ablation_experiment.py`。
+12. `12_ABLATION_EXPERIMENT_PROMPT.md`：實驗三（B&BC 加速策略 ablation：BBC→+WS→+RS→+UC→Full 五配置，Excel 六分頁）；計畫已定，待使用者確認後實作 `run experiment/batch_ablation_experiment.py`。
+13. `13_SCALE_PILOT_AND_RERUN_PROMPT.md`：交接執行計畫（給執行模型）——A. 規模 pilot 找 S* → B. PDR 校準各 set 的 scope → C. 以 S* 與選定 scope 重跑實驗一；只改 runner 參數區、每步停止回報。
 
 註：階段 8–11 例外於原則 6（風險模型直接用 Benders B&BC，經使用者明確要求）。
 

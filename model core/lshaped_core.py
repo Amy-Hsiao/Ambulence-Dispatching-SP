@@ -959,7 +959,7 @@ def solve_bbc(
     core_point = _build_initial_core_point(instance) if pareto_enabled else None
     evaluation_cache: dict[
         tuple[Any, ...],
-        tuple[float, dict[str, float], dict[str, Any]],
+        tuple[float | None, dict[str, float], dict[str, Any]],
     ] = {}
     seed_cut_signatures: set[tuple[Any, ...]] = set()
     user_cut_signatures: set[tuple[Any, ...]] = set()
@@ -981,13 +981,36 @@ def solve_bbc(
 
     def evaluate_first_stage(
         fs: dict[str, Any],
-    ) -> tuple[float, dict[str, float], dict[str, Any], bool]:
+        compute_objective: bool = True,
+    ) -> tuple[float | None, dict[str, float], dict[str, Any], bool]:
+        """Evaluate recourse oracles and optionally aggregate the risk objective.
+
+        Fractional root/core-point evaluations only need Q_s and dual cuts.  They
+        are not feasible incumbents of the integer problem, so computing a true
+        UB is both unnecessary and, for extreme ellipsoidal Q vectors, can make
+        the auxiliary WMCVaR SOCP numerically fail.  Integer EV/heuristic/MIPSOL
+        calls keep the default compute_objective=True behavior.
+        """
         nonlocal cache_hits, cache_misses
+
+        def objective_from_q(q_by_s: dict[str, float]) -> float:
+            weighted_q = sum(norm_probs[s] * q_by_s[s] for s in S_selected)
+            return _first_stage_cost(instance, fs) + (
+                weighted_q
+                if risk_cfg is None
+                else risk_core.second_stage_objective_from_Q(q_by_s, norm_probs, risk_cfg)
+            )
+
         key = _first_stage_cache_key(fs)
         cached = evaluation_cache.get(key)
         if cached is not None:
             cache_hits += 1
             true_ub, q_by_s, cut_by_s = cached
+            # A fractional call may have cached only Q/cuts.  If the same point
+            # later becomes an integer incumbent, complete (and cache) its UB.
+            if compute_objective and true_ub is None:
+                true_ub = objective_from_q(q_by_s)
+                evaluation_cache[key] = (true_ub, q_by_s, cut_by_s)
             return true_ub, q_by_s, cut_by_s, True
 
         q_by_s: dict[str, float] = {}
@@ -1001,17 +1024,10 @@ def solve_bbc(
             }
             results = [(s, *future.result()) for s, future in futures.items()]
 
-        weighted_q = 0.0
         for s, q_s, cut in results:
             q_by_s[s] = q_s
             cut_by_s[s] = cut
-            weighted_q += norm_probs[s] * q_s
-        # risk_cfg=None → Σ p_s·Q_s（同舊版）；否則以風險目標評估 true UB
-        true_ub = _first_stage_cost(instance, fs) + (
-            weighted_q
-            if risk_cfg is None
-            else risk_core.second_stage_objective_from_Q(q_by_s, norm_probs, risk_cfg)
-        )
+        true_ub = objective_from_q(q_by_s) if compute_objective else None
         evaluation_cache[key] = (true_ub, q_by_s, cut_by_s)
         cache_misses += 1
         return true_ub, q_by_s, cut_by_s, False
@@ -1193,12 +1209,16 @@ def solve_bbc(
                     best_seed_lb = root_seed_lb
 
                 fs = _extract_first_stage(mv, J, H, round_values=False)
-                _, q_by_s, cut_by_s, cache_hit = evaluate_first_stage(fs)
+                _, q_by_s, cut_by_s, cache_hit = evaluate_first_stage(
+                    fs, compute_objective=False,
+                )
                 pareto_cut_by_s = None
                 pareto_cache_hit = False
                 if pareto_enabled:
                     core_point = _blend_core_point(instance, core_point, fs, blend=papadakos_blend)
-                    _, _, pareto_cut_by_s, pareto_cache_hit = evaluate_first_stage(core_point)
+                    _, _, pareto_cut_by_s, pareto_cache_hit = evaluate_first_stage(
+                        core_point, compute_objective=False,
+                    )
                 root_seed_iters_done += 1
                 cuts_this_iter = 0
 
@@ -1394,12 +1414,16 @@ def solve_bbc(
                 round_values=False,
                 from_callback=model.cbGetNodeRel,
             )
-            _, q_by_s, cut_by_s, cache_hit = evaluate_first_stage(fs)
+            _, q_by_s, cut_by_s, cache_hit = evaluate_first_stage(
+                fs, compute_objective=False,
+            )
             pareto_cut_by_s = None
             pareto_cache_hit = False
             if pareto_enabled:
                 core_point = _blend_core_point(instance, core_point, fs, blend=papadakos_blend)
-                _, _, pareto_cut_by_s, pareto_cache_hit = evaluate_first_stage(core_point)
+                _, _, pareto_cut_by_s, pareto_cache_hit = evaluate_first_stage(
+                    core_point, compute_objective=False,
+                )
             root_cut_rounds_done += 1
             cuts_this_node = 0
 

@@ -69,6 +69,15 @@ TIME_LIMIT   = 10800.0
 MIP_GAP      = 1e-4     # 正式論文表採 0.01% relative gap，降低參數敏感度比較的求解誤差
 COMPUTE_KPIS = False    # 實驗一不需 KPI 重解（省時）；要 KPI 改 True
 
+# Full-size ellipsoidal safe mode: fractional root solutions can satisfy the
+# master only within feasibility tolerance, then become infeasible when every
+# first-stage value is fixed exactly in a scenario oracle.  Keep the exact
+# MIPSOL lazy-cut path, but do not evaluate fractional root/core-point values.
+BENDERS_ROOT_SEED_ITERS = 0
+BENDERS_ROOT_CUT_ROUNDS = 0
+BENDERS_USE_USER_CUTS   = False
+BENDERS_PARETO_ENABLED  = False
+
 # ── Output settings ──────────────────────────────────────────────────────────
 RESULT_PREFIX   = "DRO_alpha_lambda_ellipsoidal"
 LOG_SUBDIR_NAME = "dro alpha lambda"
@@ -267,6 +276,10 @@ def temporary_config():
         "HOSPITAL_CAPACITY_MULTIPLIER": BASE_HOSPITAL_CAPACITY_MULTIPLIER,
         "SP_TIME_LIMIT":                TIME_LIMIT,
         "SP_MIP_GAP":                   MIP_GAP,
+        "BENDERS_ROOT_SEED_ITERS":      BENDERS_ROOT_SEED_ITERS,
+        "BENDERS_ROOT_CUT_ROUNDS":      BENDERS_ROOT_CUT_ROUNDS,
+        "BENDERS_USE_USER_CUTS":        BENDERS_USE_USER_CUTS,
+        "BENDERS_PARETO_ENABLED":       BENDERS_PARETO_ENABLED,
     }
     if hasattr(cfg, "CCP_SAMPLE_SIZE"):
         keys["CCP_SAMPLE_SIZE"] = BASE_CCP_SAMPLE_SIZE
@@ -652,6 +665,11 @@ def main() -> None:
     print(f"S={BASE_SCENARIOS} T={BASE_TIME_PERIODS} "
           f"sample_ratio={BASE_SAMPLE_RATIO} ccp={BASE_CCP_SAMPLE_SIZE}")
     print(f"time_limit={TIME_LIMIT} mip_gap={MIP_GAP} cases={len(cases)}")
+    print("oracle_mode=integer-incumbent safe mode "
+          f"(root_seed_iters={BENDERS_ROOT_SEED_ITERS}, "
+          f"root_cut_rounds={BENDERS_ROOT_CUT_ROUNDS}, "
+          f"user_cuts={BENDERS_USE_USER_CUTS}, "
+          f"pareto={BENDERS_PARETO_ENABLED})")
     print(f"CSV   : {csv_path}")
     print(f"Excel : {xlsx_path}")
 

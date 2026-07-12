@@ -337,25 +337,46 @@ def evaluate_wmcvar(
     alpha = risk_cfg["alpha"]
     lam = risk_cfg["lambda"]
 
+    # WMCVaR 對 Q 正齊次。先把 Q 縮放到 O(1)，避免 full-size instance 的
+    # Q~1e7--1e8 搭配小 ambiguity scope 時讓 SOCP barrier 數值失敗。
+    max_abs_q = max(1.0, max(abs(float(q_by_s[s])) for s in S))
+    q_scale = 1.0 / max_abs_q
+    scaled_q = {s: float(q_by_s[s]) * q_scale for s in S}
+
     m = gp.Model("wmcvar_eval", env=_quiet_env())
     m.setParam("OutputFlag", 0)
     phi = m.addVar(lb=-GRB.INFINITY, name="phi_var")
     ell = {s: m.addVar(lb=0.0, name=f"ell[{s}]") for s in S}
     for s in S:
-        m.addConstr(ell[s] >= q_by_s[s] - phi, name=f"CVaR_ell_{s}")
-    q_expr = {s: float(q_by_s[s]) for s in S}
+        m.addConstr(ell[s] >= scaled_q[s] - phi, name=f"CVaR_ell_{s}")
+    q_expr = dict(scaled_q)
     mean_term, cvar_tail = _add_dro_dual_blocks(m, q_expr, ell, S, p0, risk_cfg)
     m.setObjective(
         (1.0 - lam) * mean_term
         + lam * (phi + (1.0 / (1.0 - alpha)) * cvar_tail),
         GRB.MINIMIZE,
     )
-    m.optimize()
+
+    statuses: list[int] = []
+    for retry_params in ({}, {"NumericFocus": 3}, {"NumericFocus": 3, "BarHomogeneous": 1}):
+        for name, value in retry_params.items():
+            m.setParam(name, value)
+        m.optimize()
+        statuses.append(int(m.status))
+        if m.status == GRB.OPTIMAL:
+            break
+        m.reset()
     if m.status != GRB.OPTIMAL:
-        raise RuntimeError(f"evaluate_wmcvar: status={m.status} (expected OPTIMAL).")
-    value = float(m.ObjVal)
-    phi_star = float(phi.X)
-    ell_star = {s: float(ell[s].X) for s in S}
+        m.dispose()
+        raise RuntimeError(
+            "evaluate_wmcvar failed after numeric retries: "
+            f"statuses={statuses}, max_abs_Q={max_abs_q:.6g}, "
+            f"scope={risk_scope(risk_cfg)!r}."
+        )
+
+    value = float(m.ObjVal) / q_scale
+    phi_star = float(phi.X) / q_scale
+    ell_star = {s: float(ell[s].X) / q_scale for s in S}
     m.dispose()
 
     # worst-case p：在 φ* 固定下，最大化組合權重 (1−λ)Q + λ/(1−α)ℓ* 的機率向量

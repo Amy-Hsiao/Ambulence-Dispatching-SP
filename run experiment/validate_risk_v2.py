@@ -18,6 +18,8 @@ Checks:
     D6  DRO-E engine cross-check: B&BC (MISOCP master + lazy cuts) matches
         classic L-shaped loop within combined gap.
     D7  Worst-case p stays inside the ambiguity set and sums to 1.
+    D8  Q-scale sweep (1e0--1e8): scaled evaluate_wmcvar matches the primal
+        formulation and preserves positive homogeneity for all three sets.
 """
 from __future__ import annotations
 
@@ -140,6 +142,36 @@ def check_d7(q, p0, risk_cfg, worst_p):
     return True, "worst_p feasible (sum=1, p>=0, inside ambiguity set)"
 
 
+def check_d8_scaling():
+    """方案 A：跨 1e0--1e8 驗證 primal 一致性與 WMCVaR 正齊次性。"""
+    rng = random.Random(1414)
+    labels = [f"s{i}" for i in range(5)]
+    p0 = {s: 1.0 / len(labels) for s in labels}
+    base_q = {s: rng.uniform(1.0, 10.0) for s in labels}
+    cases = [
+        risk_core.make_risk_cfg("dro_box", alpha=0.8, lam=0.5, epsilon_box=0.05),
+        risk_core.make_risk_cfg("dro_ellipsoidal", alpha=0.8, lam=0.5, a_e=0.05),
+        risk_core.make_risk_cfg("dro_polyhedral", alpha=0.8, lam=0.5, a_p=0.10),
+    ]
+    scales = (1.0, 1e2, 1e4, 1e6, 1e8)
+    details = []
+    for cfg in cases:
+        base_value, _ = risk_core.evaluate_wmcvar(base_q, p0, cfg)
+        for scale in scales:
+            q = {s: scale * base_q[s] for s in labels}
+            got, _ = risk_core.evaluate_wmcvar(q, p0, cfg)
+            want = primal_wmcvar(q, p0, cfg)
+            primal_rel = abs(got - want) / max(1.0, abs(want))
+            homogeneous_rel = abs(got / scale - base_value) / max(1.0, abs(base_value))
+            if primal_rel >= 1e-5 or homogeneous_rel >= 1e-5:
+                return False, (
+                    f"{cfg['type']} scale={scale:g} primal_rel={primal_rel:.2e} "
+                    f"homogeneous_rel={homogeneous_rel:.2e} got={got:.6g} want={want:.6g}"
+                )
+        details.append(f"{cfg['type']} ok")
+    return True, "; ".join(details) + "; scales=1e0..1e8"
+
+
 def run_bbc(instance, S, risk_cfg, **overrides):
     kwargs = dict(BBC_KWARGS)
     kwargs.update(overrides)
@@ -160,6 +192,9 @@ def main():
 
     ok, detail = check_d4()
     results.append(("D4 box epsilon guard", ok, detail))
+
+    ok, detail = check_d8_scaling()
+    results.append(("D8 WMCVaR scaling and homogeneity (3 sets)", ok, detail))
 
     instance = config.generate_data(
         sample_ratio=SAMPLE_RATIO, ccp_sample_size=CCP_SAMPLE_SIZE

@@ -69,14 +69,13 @@ TIME_LIMIT   = 10800.0
 MIP_GAP      = 1e-4     # 正式論文表採 0.01% relative gap，降低參數敏感度比較的求解誤差
 COMPUTE_KPIS = False    # 實驗一不需 KPI 重解（省時）；要 KPI 改 True
 
-# Full-size ellipsoidal safe mode: fractional root solutions can satisfy the
-# master only within feasibility tolerance, then become infeasible when every
-# first-stage value is fixed exactly in a scenario oracle.  Keep the exact
-# MIPSOL lazy-cut path, but do not evaluate fractional root/core-point values.
-BENDERS_ROOT_SEED_ITERS = 0
-BENDERS_ROOT_CUT_ROUNDS = 0
-BENDERS_USE_USER_CUTS   = False
-BENDERS_PARETO_ENABLED  = False
+# Keep all B&BC accelerators.  A runner-local feasibility guard below clips
+# fractional root solutions back into the relaxed first-stage feasible domain
+# before an oracle fixes their values exactly.  Integer incumbents are untouched.
+BENDERS_ROOT_SEED_ITERS = 300
+BENDERS_ROOT_CUT_ROUNDS = 15
+BENDERS_USE_USER_CUTS   = True
+BENDERS_PARETO_ENABLED  = True
 
 # ── Output settings ──────────────────────────────────────────────────────────
 RESULT_PREFIX   = "DRO_alpha_lambda_ellipsoidal"
@@ -326,6 +325,62 @@ def patched_generate_scenarios():
         cfg.generate_scenarios = original
 
 
+@contextmanager
+def patched_fractional_first_stage_repair(dro_module: Any):
+    """Repair only fractional accelerator points before oracle evaluation.
+
+    Gurobi may return a root relaxation that is feasible within its tolerance,
+    while fixing every value exactly in an oracle exposes a tiny first-stage
+    resource violation.  Reuse lshaped_core's existing relaxed-domain clipping
+    for round_values=False extractions; MIPSOL/EV integer solutions are unchanged.
+    """
+    core = dro_module.lshaped_core
+    original_solve = core.solve
+    original_extract = core._extract_first_stage
+    active_instances: list[dict[str, Any]] = []
+    stats = {"fractional": 0, "adjusted": 0, "max_delta": 0.0}
+
+    def _solve(instance, *args, **kwargs):
+        active_instances.append(instance)
+        try:
+            return original_solve(instance, *args, **kwargs)
+        finally:
+            active_instances.pop()
+
+    def _extract(*args, **kwargs):
+        fs = original_extract(*args, **kwargs)
+        round_values = args[3] if len(args) > 3 else kwargs.get("round_values", True)
+        if round_values or not active_instances:
+            return fs
+
+        repaired = core._clip_first_stage_to_relaxed_domain(
+            active_instances[-1], fs,
+        )
+        max_delta = max(
+            abs(float(repaired[group][key]) - float(fs[group][key]))
+            for group in ("X", "V", "U", "Y")
+            for key in fs[group]
+        )
+        stats["fractional"] += 1
+        stats["max_delta"] = max(stats["max_delta"], max_delta)
+        if max_delta > 1e-12:
+            stats["adjusted"] += 1
+        return repaired
+
+    core.solve = _solve
+    core._extract_first_stage = _extract
+    try:
+        yield
+    finally:
+        core.solve = original_solve
+        core._extract_first_stage = original_extract
+        print(
+            "  [fractional feasibility guard] "
+            f"evaluated={stats['fractional']} adjusted={stats['adjusted']} "
+            f"max_delta={stats['max_delta']:.3e}"
+        )
+
+
 # =============================================================================
 # Core run logic
 # =============================================================================
@@ -375,6 +430,7 @@ def run_one_case(
                 temporary_config(),
                 patched_generate_data(),
                 patched_generate_scenarios(),
+                patched_fractional_first_stage_repair(dro_module),
             ):
                 model, summary = dro_module.run_dro_model(
                     ambiguity_set=aset,
@@ -665,7 +721,7 @@ def main() -> None:
     print(f"S={BASE_SCENARIOS} T={BASE_TIME_PERIODS} "
           f"sample_ratio={BASE_SAMPLE_RATIO} ccp={BASE_CCP_SAMPLE_SIZE}")
     print(f"time_limit={TIME_LIMIT} mip_gap={MIP_GAP} cases={len(cases)}")
-    print("oracle_mode=integer-incumbent safe mode "
+    print("oracle_mode=all accelerators + fractional feasibility guard "
           f"(root_seed_iters={BENDERS_ROOT_SEED_ITERS}, "
           f"root_cut_rounds={BENDERS_ROOT_CUT_ROUNDS}, "
           f"user_cuts={BENDERS_USE_USER_CUTS}, "

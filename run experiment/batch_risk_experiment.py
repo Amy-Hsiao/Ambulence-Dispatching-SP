@@ -45,8 +45,8 @@ from typing import Any
 
 # ── 實驗網格（Jin et al. 2024 Table 4 的 α × λ 組合）─────────────────────────
 AMBIGUITY_SETS = ["ellipsoidal"]
-ALPHA_VALUES   = [0.5, 0.6, 0.7, 0.8, 0.9]
-LAMBDA_VALUES  = [0.3, 0.5, 0.7, 0.9]
+ALPHA_VALUES   = [0.5, 0.9]
+LAMBDA_VALUES  = [0.3, 0.9]
 
 # ── ambiguity scope（固定；box 需 ≤ 1/BASE_SCENARIOS，main() 會檢查）─────────
 SCOPES = {
@@ -65,7 +65,7 @@ BASE_ROAD_CAPACITY_MULTIPLIER     = 1.0
 BASE_HOSPITAL_CAPACITY_MULTIPLIER = 1.0
 
 # ── Solver settings ──────────────────────────────────────────────────────────
-TIME_LIMIT   = 3600.0
+TIME_LIMIT   = 10800.0
 MIP_GAP      = 1e-4     # 正式論文表採 0.01% relative gap，降低參數敏感度比較的求解誤差
 COMPUTE_KPIS = False    # 實驗一不需 KPI 重解（省時）；要 KPI 改 True
 
@@ -664,10 +664,11 @@ def main() -> None:
         export_xlsx(rows, xlsx_path)
         if idx == 1 and REQUIRE_FIRST_CASE_SUCCESS and row.get("status") != "OK":
             print("\n[ABORT] 第一個 ellipsoidal pilot 失敗；已保留 CSV/Excel/log，"
-                  "不執行其餘 19 cases。")
+                  f"不執行其餘 {len(cases) - 1} cases。")
             break
         if idx == 1 and REQUIRE_FIRST_CASE_SUCCESS:
-            print("\n[PILOT PASS] 第一個 ellipsoidal case 成功，繼續其餘 19 cases。")
+            print(f"\n[PILOT PASS] 第一個 ellipsoidal case 成功，"
+                  f"繼續其餘 {len(cases) - 1} cases。")
 
     print_matrices(rows)
     warnings = monotonicity_warnings(rows)

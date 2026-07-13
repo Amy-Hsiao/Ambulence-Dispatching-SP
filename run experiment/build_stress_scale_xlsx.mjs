@@ -1,6 +1,8 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { SpreadsheetFile, Workbook } from "@oai/artifact-tool";
+// The bundled artifact runtime stays under .codex_spreadsheet while all
+// experiment runners live in this directory.
+import { SpreadsheetFile, Workbook } from "../.codex_spreadsheet/node_modules/@oai/artifact-tool/dist/artifact_tool.mjs";
 
 
 const [jsonPath, xlsxPath, previewPath] = process.argv.slice(2);

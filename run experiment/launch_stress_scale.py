@@ -6,7 +6,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-SCRIPT = ROOT / "run experiment" / "supervise_stress_scale.py"
+SCRIPT = ROOT / "run experiment" / "stress_test_different_scale_bbc_20260713.py"
 LOG_DIR = ROOT / "logs" / "Stress Test_Different Scale_B&BC_20260713"
 LOG_DIR.mkdir(parents=True, exist_ok=True)
 

@@ -5,6 +5,9 @@ from __future__ import annotations
 import importlib.util
 import json
 import os
+import shutil
+import subprocess
+import sys
 from pathlib import Path
 
 
@@ -12,6 +15,18 @@ ROOT_DIR = Path(__file__).resolve().parents[1]
 BASE_RUNNER_PATH = ROOT_DIR / "run experiment" / "batch_stress_test.py"
 OUTPUT_DIR = ROOT_DIR / "experiment result"
 RESULT_BASENAME = "Stress Test_Different Scale_B&BC_20260713"
+SNAPSHOT_PATH = ROOT_DIR / "run experiment" / "stress_scale_rows.json"
+BUILDER_PATH = ROOT_DIR / "run experiment" / "build_stress_scale_xlsx.mjs"
+PREVIEW_PATH = ROOT_DIR / "run experiment" / "stress_scale_preview.png"
+DEFAULT_NODE = Path(
+    r"C:\Users\Amy\.cache\codex-runtimes\codex-primary-runtime\dependencies\node\bin\node.exe"
+)
+
+# Allow the bundled Python packages to make this file runnable directly from a
+# clean terminal, without the former supervisor wrapper.
+PYTHON_PACKAGES = ROOT_DIR / ".codex_spreadsheet" / "python_packages"
+if PYTHON_PACKAGES.exists() and str(PYTHON_PACKAGES) not in sys.path:
+    sys.path.insert(0, str(PYTHON_PACKAGES))
 
 
 def _load_base_runner():
@@ -52,15 +67,51 @@ runner.cfg.BENDERS_PARALLEL_ORACLES = max(1, int(runner.cfg.BENDERS_PARALLEL_ORA
 
 
 def export_xlsx(rows, xlsx_path: Path) -> None:
-    """Persist an atomic result snapshot; the detached supervisor builds Excel."""
+    """Persist an atomic snapshot; the same script builds Excel on exit."""
     xlsx_path.parent.mkdir(parents=True, exist_ok=True)
     scratch_dir = ROOT_DIR / "run experiment"
     scratch_dir.mkdir(parents=True, exist_ok=True)
-    json_path = scratch_dir / "stress_scale_rows.json"
-    temp_path = json_path.with_suffix(".tmp")
+    temp_path = SNAPSHOT_PATH.with_suffix(".tmp")
     temp_path.write_text(json.dumps(rows, ensure_ascii=False, indent=2), encoding="utf-8")
-    os.replace(temp_path, json_path)
-    print(f"[xlsx] result snapshot updated ({len(rows)} row(s)); final workbook is built after all cases")
+    os.replace(temp_path, SNAPSHOT_PATH)
+    print(f"[xlsx] result snapshot updated ({len(rows)} row(s))")
+
+
+def _find_node() -> Path | None:
+    """Find the bundled Node runtime, or a node executable on PATH."""
+    env_node = os.environ.get("CODEX_NODE")
+    candidates = [Path(env_node)] if env_node else []
+    candidates.extend([DEFAULT_NODE, Path(shutil.which("node"))] if shutil.which("node") else [DEFAULT_NODE])
+    for candidate in candidates:
+        if candidate and candidate.exists():
+            return candidate
+    return None
+
+
+def build_final_excel() -> None:
+    """Build the final workbook from the latest snapshot in this same process."""
+    if not SNAPSHOT_PATH.exists():
+        print(f"[xlsx] no snapshot found; Excel was not built: {SNAPSHOT_PATH}")
+        return
+    if not BUILDER_PATH.exists():
+        print(f"[xlsx] builder not found; Excel was not built: {BUILDER_PATH}")
+        return
+    node = _find_node()
+    if node is None:
+        print("[xlsx] Node.js not found; set CODEX_NODE or add node to PATH")
+        return
+
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    output_path = OUTPUT_DIR / f"{RESULT_BASENAME}.xlsx"
+    command = [str(node), str(BUILDER_PATH), str(SNAPSHOT_PATH), str(output_path), str(PREVIEW_PATH)]
+    try:
+        result = subprocess.run(command, cwd=ROOT_DIR, check=False)
+    except OSError as exc:
+        print(f"[xlsx] failed to launch Node builder: {exc}")
+        return
+    print(f"[xlsx] builder exit code: {result.returncode}")
+    if result.returncode == 0:
+        print(f"[xlsx] final workbook: {output_path}")
 
 
 runner.export_xlsx = export_xlsx
@@ -69,4 +120,9 @@ runner.export_xlsx = export_xlsx
 if __name__ == "__main__":
     print("B&BC enhancements: multi-cut, root seeding, user/root cuts, EV warm start, ")
     print("Pareto cuts, branch priority, and parallel oracles are all enabled.")
-    runner.main()
+    try:
+        runner.main()
+    finally:
+        # This also preserves a partial workbook if the runner exits after a
+        # case-level error or is interrupted after a snapshot was written.
+        build_final_excel()

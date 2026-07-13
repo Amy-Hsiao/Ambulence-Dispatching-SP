@@ -40,6 +40,20 @@ CCP_SAMPLE_SIZE = None       # East District 全部 10 個 CCP 都是候選點
 SCALE_CCP_TOTAL_RESOURCES = True
 CCP_RESOURCE_SCALE_ROUNDING = "ceil"
 
+# ── 規模 Profile（實驗程式只需切換這一個設定）────────────────────────────
+EXPERIMENT_SCALE = "medium"  # "small" | "medium" | "large" | "full"
+
+N_DISASTER_FULL = 129
+N_HOSPITAL_FULL = 16
+N_CCP_FULL = 10
+
+SCALE_PROFILES = {
+    "small":  {"n_disaster": 20,  "n_hospital": 6,  "n_ccp": 10, "spatial_clusters": 3},
+    "medium": {"n_disaster": 40,  "n_hospital": 10, "n_ccp": 10, "spatial_clusters": 3},
+    "large":  {"n_disaster": 70,  "n_hospital": 14, "n_ccp": 10, "spatial_clusters": 3},
+    "full":   {"n_disaster": 129, "n_hospital": 16, "n_ccp": 10, "spatial_clusters": 3},
+}
+
 SP_SCENARIO_SIZE = None
 SP_SAMPLE_RATIO = SAMPLE_RATIO
 SP_TIME_LIMIT = 3600.0
@@ -221,6 +235,23 @@ def _indexed_scalar(value: float, ids: list[str]) -> dict[str, float]:
     return {item_id: float(value) for item_id in ids}
 
 
+def resolve_scale(scale: str) -> dict[str, Any]:
+    """Resolve a named network scale and its two resource-scaling drivers."""
+    normalized = str(scale).strip().lower()
+    if normalized not in SCALE_PROFILES:
+        valid = ", ".join(SCALE_PROFILES)
+        raise ValueError(f"Unknown experiment scale {scale!r}; expected one of: {valid}")
+    profile = SCALE_PROFILES[normalized]
+    demand_scale = profile["n_disaster"] / N_DISASTER_FULL
+    hospital_scale = demand_scale / (profile["n_hospital"] / N_HOSPITAL_FULL)
+    return {
+        **profile,
+        "scale": normalized,
+        "demand_scale": demand_scale,
+        "hospital_scale": hospital_scale,
+    }
+
+
 def _scale_total_resource(value: float, scale: float) -> float:
     scaled = float(value) * float(scale)
     if CCP_RESOURCE_SCALE_ROUNDING == "ceil":
@@ -234,7 +265,15 @@ def _scale_total_resource(value: float, scale: float) -> float:
     raise ValueError(f"Unsupported CCP_RESOURCE_SCALE_ROUNDING: {CCP_RESOURCE_SCALE_ROUNDING}")
 
 
-def _build_deterministic_parameters(ccp_ids, hospital_ids, ccp_resource_scale=1.0):
+def _build_deterministic_parameters(
+    ccp_ids,
+    hospital_ids,
+    ccp_resource_scale=1.0,
+    demand_scale=None,
+    hospital_scale=1.0,
+):
+    # ccp_resource_scale is retained for legacy sample_ratio/ccp_sample_size runs.
+    demand_scale = ccp_resource_scale if demand_scale is None else demand_scale
     supply_allocation_cost = {
         h: {j: float(PARAMETERS["supply_allocation_cost_unit"]) for j in ccp_ids}
         for h in hospital_ids
@@ -244,16 +283,29 @@ def _build_deterministic_parameters(ccp_ids, hospital_ids, ccp_resource_scale=1.
         "staff_unit_assignment_cost": float(PARAMETERS["staff_unit_assignment_cost"]),
         "ccp_ambulance_unit_assignment_cost": float(PARAMETERS["ccp_ambulance_unit_assignment_cost"]),
         "supply_allocation_cost_from_hospital_to_ccp": supply_allocation_cost,
-        "total_available_staff": _scale_total_resource(PARAMETERS["total_available_staff"], ccp_resource_scale),
-        "total_available_ccp_ambulances": _scale_total_resource(PARAMETERS["total_available_ccp_ambulances"], ccp_resource_scale),
-        "hospital_supply_upper_bound": _indexed_scalar(PARAMETERS["hospital_supply_upper_bound"], hospital_ids),
-        "ccp_staff_upper_bound": _indexed_scalar(PARAMETERS["ccp_staff_upper_bound"], ccp_ids),
-        "ccp_ambulance_upper_bound": _indexed_scalar(PARAMETERS["ccp_ambulance_upper_bound"], ccp_ids),
-        "ccp_supply_upper_bound": _indexed_scalar(PARAMETERS["ccp_supply_upper_bound"], ccp_ids),
-        "hospital_ambulance_fleet": _indexed_scalar(PARAMETERS["hospital_ambulance_fleet"], hospital_ids),
+        "total_available_staff": _scale_total_resource(PARAMETERS["total_available_staff"], demand_scale),
+        "total_available_ccp_ambulances": _scale_total_resource(PARAMETERS["total_available_ccp_ambulances"], demand_scale),
+        "hospital_supply_upper_bound": _indexed_scalar(
+            _scale_total_resource(PARAMETERS["hospital_supply_upper_bound"], hospital_scale), hospital_ids
+        ),
+        "ccp_staff_upper_bound": _indexed_scalar(
+            _scale_total_resource(PARAMETERS["ccp_staff_upper_bound"], demand_scale), ccp_ids
+        ),
+        "ccp_ambulance_upper_bound": _indexed_scalar(
+            _scale_total_resource(PARAMETERS["ccp_ambulance_upper_bound"], demand_scale), ccp_ids
+        ),
+        "ccp_supply_upper_bound": _indexed_scalar(
+            _scale_total_resource(PARAMETERS["ccp_supply_upper_bound"], demand_scale), ccp_ids
+        ),
+        "hospital_ambulance_fleet": _indexed_scalar(
+            _scale_total_resource(PARAMETERS["hospital_ambulance_fleet"], hospital_scale), hospital_ids
+        ),
         "ccp_ambulance_casualty_capacity": float(PARAMETERS["ccp_ambulance_casualty_capacity"]),
         "hospital_ambulance_casualty_capacity": float(PARAMETERS["hospital_ambulance_casualty_capacity"]),
-        "ccp_physical_capacity_by_severity": PARAMETERS["ccp_physical_capacity_by_severity"],
+        "ccp_physical_capacity_by_severity": {
+            severity: _scale_total_resource(value, demand_scale)
+            for severity, value in PARAMETERS["ccp_physical_capacity_by_severity"].items()
+        },
         "treatment_duration_by_severity": PARAMETERS["treatment_duration_by_severity"],
         "staff_treatment_rate_by_severity": PARAMETERS["staff_treatment_rate_by_severity"],
         "supply_consumption_by_severity": PARAMETERS["supply_consumption_by_severity"],
@@ -505,13 +557,24 @@ def validate_instance(instance: dict[str, Any]) -> None:
 
 
 def generate_data(
-    sample_ratio: float = SAMPLE_RATIO,
+    sample_ratio: float | None = None,
     ccp_sample_size: int | None = CCP_SAMPLE_SIZE,
+    scale: str | None = None,
 ) -> dict[str, Any]:
-    if not (0 < sample_ratio <= 1.0):
-        raise ValueError(f"sample_ratio must be in (0, 1.0], got {sample_ratio}")
-    if ccp_sample_size is not None and (not isinstance(ccp_sample_size, int) or ccp_sample_size < 1):
-        raise ValueError(f"ccp_sample_size must be a positive int or None, got {ccp_sample_size}")
+    """Generate an instance from a named scale profile or the legacy ratio interface.
+
+    With no arguments, ``EXPERIMENT_SCALE`` is used.  Passing ``sample_ratio``
+    selects the backward-compatible ratio branch; passing ``scale`` explicitly
+    always takes precedence over legacy sampling arguments.
+    """
+    profile = resolve_scale(EXPERIMENT_SCALE if scale is None else scale) if (
+        scale is not None or sample_ratio is None
+    ) else None
+    if profile is None:
+        if not (0 < float(sample_ratio) <= 1.0):
+            raise ValueError(f"sample_ratio must be in (0, 1.0], got {sample_ratio}")
+        if ccp_sample_size is not None and (not isinstance(ccp_sample_size, int) or ccp_sample_size < 1):
+            raise ValueError(f"ccp_sample_size must be a positive int or None, got {ccp_sample_size}")
 
     all_disaster_records = read_coordinate_csv(DATA_DIR / DISASTER_CSV)
     all_ccp_records      = read_coordinate_csv(DATA_DIR / CCP_CSV)
@@ -521,11 +584,30 @@ def generate_data(
     full_n_ccp      = len(all_ccp_records)
     full_n_hospital = len(all_hospital_records)
 
-    _n_ccp = (
-        min(ccp_sample_size, full_n_ccp)
-        if ccp_sample_size is not None
-        else full_n_ccp
-    )
+    if profile is not None:
+        requested = {
+            "n_disaster": profile["n_disaster"],
+            "n_ccp": profile["n_ccp"],
+            "n_hospital": profile["n_hospital"],
+        }
+        available = {
+            "n_disaster": full_n_disaster,
+            "n_ccp": full_n_ccp,
+            "n_hospital": full_n_hospital,
+        }
+        for key, requested_count in requested.items():
+            if requested_count > available[key]:
+                raise ValueError(
+                    f"Scale {profile['scale']!r} requests {key}={requested_count}, "
+                    f"but only {available[key]} records are available"
+                )
+        _n_ccp = profile["n_ccp"]
+    else:
+        _n_ccp = (
+            min(ccp_sample_size, full_n_ccp)
+            if ccp_sample_size is not None
+            else full_n_ccp
+        )
     if _n_ccp < full_n_ccp:
         ccp_rng     = random.Random(stable_seed(MASTER_SEED, "ccp_selection", _n_ccp))
         sampled_ccp = ccp_rng.sample(all_ccp_records, _n_ccp)
@@ -534,10 +616,20 @@ def generate_data(
     else:
         ccp_records = all_ccp_records
 
-    if sample_ratio < 1.0:
+    if profile is not None:
+        # Nested deterministic sampling: small ⊂ medium ⊂ large ⊂ full.
+        disaster_order = list(all_disaster_records)
+        hospital_order = list(all_hospital_records)
+        random.Random(stable_seed(MASTER_SEED, "scale_nested", "disaster")).shuffle(disaster_order)
+        random.Random(stable_seed(MASTER_SEED, "scale_nested", "hospital")).shuffle(hospital_order)
+        disaster_id_set = {r.id for r in disaster_order[:profile["n_disaster"]]}
+        hospital_id_set = {r.id for r in hospital_order[:profile["n_hospital"]]}
+        disaster_records = [r for r in all_disaster_records if r.id in disaster_id_set]
+        hospital_records = [r for r in all_hospital_records if r.id in hospital_id_set]
+    elif float(sample_ratio) < 1.0:
         sampling_rng = random.Random(MASTER_SEED)
-        n_disaster = max(1, math.ceil(full_n_disaster * sample_ratio))
-        n_hospital = max(1, math.ceil(full_n_hospital  * sample_ratio))
+        n_disaster = max(1, math.ceil(full_n_disaster * float(sample_ratio)))
+        n_hospital = max(1, math.ceil(full_n_hospital * float(sample_ratio)))
         sampled_disaster = sampling_rng.sample(all_disaster_records, n_disaster)
         sampled_hospital = sampling_rng.sample(all_hospital_records,  n_hospital)
         disaster_id_set  = {r.id for r in sampled_disaster}
@@ -553,11 +645,20 @@ def generate_data(
     hospital_ids = [r.id for r in hospital_records]
 
     actual_ccp_count = len(ccp_ids)
-    ccp_resource_scale = (
-        actual_ccp_count / full_n_ccp
-        if SCALE_CCP_TOTAL_RESOURCES and full_n_ccp > 0
-        else 1.0
-    )
+    if profile is not None:
+        demand_scale = float(profile["demand_scale"])
+        hospital_scale = float(profile["hospital_scale"])
+        ccp_resource_scale = demand_scale
+        sampling_mode = "nested_profile"
+    else:
+        ccp_resource_scale = (
+            actual_ccp_count / full_n_ccp
+            if SCALE_CCP_TOTAL_RESOURCES and full_n_ccp > 0
+            else 1.0
+        )
+        demand_scale = ccp_resource_scale
+        hospital_scale = 1.0
+        sampling_mode = "legacy_ratio"
 
     scenario_ids = [f"S{idx + 1:03d}" for idx in range(SCENARIOS)]
     period_ids   = [f"T{idx + 1:03d}" for idx in range(TIME_PERIODS)]
@@ -570,9 +671,16 @@ def generate_data(
     cost_jh = _transport_cost(distance_jh_m)
 
     deterministic_parameters = _build_deterministic_parameters(
-        ccp_ids, hospital_ids, ccp_resource_scale=ccp_resource_scale,
+        ccp_ids,
+        hospital_ids,
+        ccp_resource_scale=ccp_resource_scale,
+        demand_scale=demand_scale,
+        hospital_scale=hospital_scale,
     )
     resource_scaling = {
+        "scale": profile["scale"] if profile is not None else None,
+        "demand_scale": demand_scale,
+        "hospital_scale": hospital_scale,
         "ccp_total_resources_scaled": SCALE_CCP_TOTAL_RESOURCES,
         "base_ccp_count": full_n_ccp,
         "actual_ccp_count": actual_ccp_count,
@@ -582,16 +690,27 @@ def generate_data(
         "scaled_total_available_staff": deterministic_parameters["total_available_staff"],
         "base_total_available_ccp_ambulances": float(PARAMETERS["total_available_ccp_ambulances"]),
         "scaled_total_available_ccp_ambulances": deterministic_parameters["total_available_ccp_ambulances"],
+        "scaled_ccp_staff_upper_bound": next(iter(deterministic_parameters["ccp_staff_upper_bound"].values())),
+        "scaled_ccp_ambulance_upper_bound": next(iter(deterministic_parameters["ccp_ambulance_upper_bound"].values())),
+        "scaled_ccp_supply_upper_bound": next(iter(deterministic_parameters["ccp_supply_upper_bound"].values())),
+        "scaled_ccp_physical_capacity_by_severity": deterministic_parameters["ccp_physical_capacity_by_severity"],
+        "scaled_hospital_supply_upper_bound": next(iter(deterministic_parameters["hospital_supply_upper_bound"].values())),
+        "scaled_hospital_ambulance_fleet": next(iter(deterministic_parameters["hospital_ambulance_fleet"].values())),
     }
 
     # 地理群集（受 USE_SPATIAL_KMEANS 開關控制）
     if USE_SPATIAL_KMEANS:
+        n_clusters = min(
+            profile["spatial_clusters"] if profile is not None else SCENARIO_SPATIAL_CLUSTERS,
+            len(disaster_records),
+        )
         cluster_assignments = _kmeans_cluster(
-            disaster_records, SCENARIO_SPATIAL_CLUSTERS, seed=MASTER_SEED
+            disaster_records, n_clusters, seed=MASTER_SEED
         )
         disaster_cluster = {r.id: c for r, c in zip(disaster_records, cluster_assignments)}
-        cluster_sizes = {ki: sum(1 for c in cluster_assignments if c == ki) for ki in range(SCENARIO_SPATIAL_CLUSTERS)}
+        cluster_sizes = {ki: sum(1 for c in cluster_assignments if c == ki) for ki in range(n_clusters)}
     else:
+        n_clusters = 0
         disaster_cluster = None
         cluster_sizes = {}
 
@@ -599,7 +718,7 @@ def generate_data(
     scenario_data, seed_audit = generate_scenarios(
         disaster_ids, ccp_ids, hospital_ids,
         disaster_cluster=disaster_cluster,
-        n_clusters=SCENARIO_SPATIAL_CLUSTERS,
+        n_clusters=n_clusters,
     )
 
     # 基準場景 B00（apply_omega=False，保持標準基準）
@@ -648,12 +767,16 @@ def generate_data(
                 "hospital_capacity_multiplier": HOSPITAL_CAPACITY_MULTIPLIER,
             },
             "scenario_omega_range": [SCENARIO_OMEGA_LOW, SCENARIO_OMEGA_HIGH],
-            "scenario_spatial_clusters": SCENARIO_SPATIAL_CLUSTERS,
+            "scenario_spatial_clusters": n_clusters,
             "scenario_spatial_omega_range": [SCENARIO_SPATIAL_OMEGA_LOW, SCENARIO_SPATIAL_OMEGA_HIGH],
             "normalize_spatial_omega": NORMALIZE_SPATIAL_OMEGA,
             "cluster_sizes": cluster_sizes,
-            "sample_ratio": sample_ratio,
-            "ccp_sample_size": ccp_sample_size,
+            "scale": profile["scale"] if profile is not None else None,
+            "sampling_mode": sampling_mode,
+            "sample_ratio": sample_ratio if profile is None else None,
+            "ccp_sample_size": ccp_sample_size if profile is None else profile["n_ccp"],
+            "demand_scale": demand_scale,
+            "hospital_scale": hospital_scale,
             "resource_scaling": resource_scaling,
             "sampled_counts": {
                 "disaster_areas": len(disaster_ids),
@@ -698,7 +821,7 @@ def generate_data(
             "severity_probability":         SEVERITY_PROBABILITY,
             "demand_uniform_range":         [DEMAND_UNIFORM_LOW, DEMAND_UNIFORM_HIGH],
             "scenario_omega_range":         [SCENARIO_OMEGA_LOW, SCENARIO_OMEGA_HIGH],
-            "scenario_spatial_clusters":    SCENARIO_SPATIAL_CLUSTERS,
+            "scenario_spatial_clusters":    n_clusters,
             "scenario_spatial_omega_range": [SCENARIO_SPATIAL_OMEGA_LOW, SCENARIO_SPATIAL_OMEGA_HIGH],
             "normalize_spatial_omega":      NORMALIZE_SPATIAL_OMEGA,
             "road_capacity_formula":        "distance_m * 0.05",

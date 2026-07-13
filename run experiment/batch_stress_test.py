@@ -69,6 +69,7 @@ GAP_STOP_PCT = 10.0    # gap 超過此值 → 標記 STOP，並停止後續實�
 
 # ── Output settings ───────────────────────────────────────────────────────────
 RESULT_PREFIX = "east_district_stress_test"
+RESULT_BASENAME = None  # 設為字串時輸出固定檔名（不加 axis/timestamp）
 STOP_ON_ERROR = True   # STOP 後不繼續跑後面的實驗
 
 # ── Log subfolder ─────────────────────────────────────────────────────────────
@@ -150,6 +151,7 @@ FIELDNAMES = [
 
 # 論文表格用的 factor 標籤（比照 Excel 表列名：Scenario x5、Time Period x8 ...）
 AXIS_FACTOR_PREFIX = {
+    "scale":                        "Scale ",
     "scenario":                     "Scenario x",
     "time_period":                  "Time Period x",
     "ccp":                          "CCP x",
@@ -160,6 +162,7 @@ AXIS_FACTOR_PREFIX = {
 }
 
 AXIS_TO_SETTING = {
+    "scale":                        "scale",
     "scenario":                     "scenarios",
     "ccp":                          "ccp_sample_size",
     "sample_ratio":                 "sample_ratio",
@@ -413,6 +416,13 @@ def format_float(value: Any, digits: int = 4) -> str:
 
 
 def estimate_counts(settings: dict[str, Any]) -> dict[str, int]:
+    if settings.get("scale") is not None:
+        profile = cfg.resolve_scale(settings["scale"])
+        return {
+            "I": profile["n_disaster"],
+            "J": profile["n_ccp"],
+            "H": profile["n_hospital"],
+        }
     full_i = csv_row_count(ROOT_DIR / "data" / cfg.DISASTER_CSV)
     full_j = csv_row_count(ROOT_DIR / "data" / cfg.CCP_CSV)
     full_h = csv_row_count(ROOT_DIR / "data" / cfg.HOSPITAL_CSV)
@@ -430,6 +440,7 @@ def estimate_counts(settings: dict[str, Any]) -> dict[str, int]:
 # =============================================================================
 def base_case_settings() -> dict[str, Any]:
     return {
+        "scale":                        None,
         "scenarios":                    BASE_SCENARIOS,
         "ccp_sample_size":              BASE_CCP_SAMPLE_SIZE,
         "sample_ratio":                 BASE_SAMPLE_RATIO,
@@ -456,6 +467,8 @@ def build_case(axis_value: Any) -> dict[str, Any]:
 
 
 def validate_case(settings: dict[str, Any]) -> None:
+    if settings.get("scale") is not None:
+        cfg.resolve_scale(settings["scale"])
     if not isinstance(settings["scenarios"], int) or settings["scenarios"] < 1:
         raise ValueError("scenarios must be a positive integer")
     if not isinstance(settings["time_periods"], int) or settings["time_periods"] < 1:
@@ -483,6 +496,8 @@ def temporary_config(settings: dict[str, Any]):
         "SP_TIME_LIMIT":                TIME_LIMIT,
         "SP_MIP_GAP":                   MIP_GAP,
     }
+    if settings.get("scale") is not None and hasattr(cfg, "EXPERIMENT_SCALE"):
+        keys["EXPERIMENT_SCALE"] = settings["scale"]
     if hasattr(cfg, "CCP_SAMPLE_SIZE"):
         keys["CCP_SAMPLE_SIZE"] = settings["ccp_sample_size"]
     if settings.get("use_omega") is not None and hasattr(cfg, "USE_SCENARIO_OMEGA"):
@@ -501,10 +516,15 @@ def temporary_config(settings: dict[str, Any]):
 
 
 @contextmanager
-def patched_generate_data(ccp_sample_size: int | None):
+def patched_generate_data(ccp_sample_size: int | None, scale: str | None = None):
     original = cfg.generate_data
     def _patched(*args, **kwargs):
-        kwargs["ccp_sample_size"] = ccp_sample_size
+        if scale is not None:
+            kwargs.pop("sample_ratio", None)
+            kwargs.pop("ccp_sample_size", None)
+            kwargs["scale"] = scale
+        else:
+            kwargs["ccp_sample_size"] = ccp_sample_size
         return original(*args, **kwargs)
     cfg.generate_data = _patched
     try:
@@ -587,7 +607,7 @@ def run_one_case(
     try:
         with (
             temporary_config(settings),
-            patched_generate_data(settings["ccp_sample_size"]),
+            patched_generate_data(settings["ccp_sample_size"], settings.get("scale")),
             patched_generate_scenarios(settings),
         ):
             model, summary = sp_module.run_sp_model(
@@ -721,8 +741,9 @@ def print_summary(rows: list[dict[str, Any]], csv_path: Path) -> None:
 def main() -> None:
     timestamp = dt.datetime.now().strftime("%Y%m%d_%H%M%S")
     RESULT_DIR.mkdir(parents=True, exist_ok=True)
-    csv_path  = RESULT_DIR / f"{RESULT_PREFIX}_{EXPERIMENT_AXIS}_{timestamp}.csv"
-    xlsx_path = RESULT_DIR / f"{RESULT_PREFIX}_{EXPERIMENT_AXIS}_{timestamp}.xlsx"
+    basename = RESULT_BASENAME or f"{RESULT_PREFIX}_{EXPERIMENT_AXIS}_{timestamp}"
+    csv_path  = RESULT_DIR / f"{basename}.csv"
+    xlsx_path = RESULT_DIR / f"{basename}.xlsx"
     rows: list[dict[str, Any]] = []
 
     LOG_SUBDIR.mkdir(parents=True, exist_ok=True)

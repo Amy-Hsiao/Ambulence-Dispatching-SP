@@ -1,0 +1,7 @@
+﻿test_id,axis,axis_value,factor,use_omega,use_kmeans,sample_ratio,I,J,H,S,T,obj_value,first_stage_decision,best_lb,best_ub,cpu_s,wall_s,num_vars,num_constrs,nodes,iterations,gap_pct,vss_pct,evpi_pct,demand_multiplier,road_capacity_multiplier,hospital_capacity_multiplier,engine,total_cuts,seed_cuts,lazy_cuts,user_cuts,root_seed_iters,root_seed_iters_done,root_seed_lb,root_seed_stop_reason,root_seed_time_s,root_cut_rounds,root_cut_rounds_done,parallel_oracles,cache_hits,cache_misses,oracle_solves,callback_time_s,log_path,status,note
+scale_small,scale,small,Scale small,True,True,1,20,10,6,30,8,11418318.70,"CCP J03  -> X: 1, Staff(V):  7, Amb(U):  2, MedicalSupply(Y): 121.00
+CCP J06  -> X: 1, Staff(V):  6, Amb(U):  3, MedicalSupply(Y): 122.00
+CCP J07  -> X: 1, Staff(V):  7, Amb(U):  2, MedicalSupply(Y): 130.00
+CCP J08  -> X: 1, Staff(V):  6, Amb(U):  3, MedicalSupply(Y): 124.00
+CCP J09  -> X: 1, Staff(V): 10, Amb(U):  2, MedicalSupply(Y): 196.00
+CCP J10  -> X: 1, Staff(V):  5, Amb(U):  3, MedicalSupply(Y): 103.00",11370401.55,11418318.70,1596.66,1929.5,120,7172,78856,941395,0.4197,6.4368,6.4468,1,1,1,bbc,36974,7134,28940,900,300,119,11182263.62,lb_rel_improve_below_0.000500_for_10_rounds,87.17,15,15,5,NA,NA,38100,556.47,C:\Amy\002 救護車調度和損壞道路修復決策\005 程式\005 Different Size Case - SP + MCVaR + DRO(2026-07-12)\logs\Stress Test_Different Scale_B&BC_20260713\BBC_seed42_scen30_used30_period8_sample1p0_D1p0_R1p0_H1p0_tl3600p0_gap0p01.log,OK,

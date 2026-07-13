@@ -45,7 +45,7 @@ from typing import Any
 
 # ── 實驗網格（Jin et al. 2024 Table 4 的 α × λ 組合）─────────────────────────
 AMBIGUITY_SETS = ["ellipsoidal"]
-ALPHA_VALUES   = [0.5, 0.9]
+ALPHA_VALUES   = [0.9]
 LAMBDA_VALUES  = [0.3, 0.9]
 
 # ── ambiguity scope（固定；box 需 ≤ 1/BASE_SCENARIOS，main() 會檢查）─────────
@@ -65,8 +65,8 @@ BASE_ROAD_CAPACITY_MULTIPLIER     = 1.0
 BASE_HOSPITAL_CAPACITY_MULTIPLIER = 1.0
 
 # ── Solver settings ──────────────────────────────────────────────────────────
-TIME_LIMIT   = 10800.0
-MIP_GAP      = 1e-4     # 正式論文表採 0.01% relative gap，降低參數敏感度比較的求解誤差
+TIME_LIMIT   = 43200.0
+MIP_GAP      = 0.05     # 5% relative gap 即可停止；未達時每 case 最多 12 小時
 COMPUTE_KPIS = False    # 實驗一不需 KPI 重解（省時）；要 KPI 改 True
 
 # Keep all B&BC accelerators.  A runner-local feasibility guard below clips

@@ -109,6 +109,7 @@ def build_gurobi_model(
     )
 
     expected_second_stage_cost = gp.LinExpr()
+    scenario_cost_expr: dict[str, Any] = {}
     for s in S:
         prob = probabilities[s]
         scenario_cost = (
@@ -130,6 +131,7 @@ def build_gurobi_model(
             )
         )
         expected_second_stage_cost += prob * scenario_cost
+        scenario_cost_expr[s] = scenario_cost
 
     model.setObjective(first_stage_cost + expected_second_stage_cost, GRB.MINIMIZE)
 
@@ -275,6 +277,9 @@ def build_gurobi_model(
     vars_dict = {
         "X": X, "V": V, "U": U, "Y": Y,
         "FI": FI, "FO": FO, "RM": RM, "REG": REG, "TRT": TRT, "WAT": WAT,
+        # 供 extensive-form 風險入口重用（純附加，不改目標式/限制式）
+        "first_stage_cost_expr": first_stage_cost,
+        "scenario_cost_expr": scenario_cost_expr,
     }
     return model, vars_dict
 

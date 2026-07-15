@@ -35,24 +35,26 @@ USE_SCENARIO_OMEGA  = True   # [Ablation 開關] True: 每情境抽全局 omega�
 USE_SPATIAL_KMEANS  = True   # [Ablation 開關] True: K-means 空間異質性；False: 不分群
 ROAD_CAPACITY_MULTIPLIER = 1.0
 HOSPITAL_CAPACITY_MULTIPLIER = 1.0
-SAMPLE_RATIO = 1.0           # East District 直接用全部 I 和 H
+SAMPLE_RATIO = 1.0           # East District 直接用全部 I 和 H（legacy 路徑）
 CCP_SAMPLE_SIZE = None       # East District 全部 10 個 CCP 都是候選點
 SCALE_CCP_TOTAL_RESOURCES = True
 CCP_RESOURCE_SCALE_ROUNDING = "ceil"
 
-# ── 規模 Profile（實驗程式只需切換這一個設定）────────────────────────────
-EXPERIMENT_SCALE = "medium"  # "small" | "medium" | "large" | "full"
-
-N_DISASTER_FULL = 129
+# ── 規模 Profile（plan/15）：實驗程式只要設 EXPERIMENT_SCALE 就切換規模 ──
+# 當 generate_data 未帶 sample_ratio 時，依 EXPERIMENT_SCALE 抽出 (I,J,H) 與
+# 縮放後參數。"full" = 全量（等同 legacy 全用）。傳 sample_ratio 則走 legacy 路徑。
+EXPERIMENT_SCALE = "full"    # "small" | "medium" | "large" | "full"
+N_DISASTER_FULL = 129        # 東區全量（縮放基準；實際以 CSV 筆數為準）
 N_HOSPITAL_FULL = 16
 N_CCP_FULL = 10
-
 SCALE_PROFILES = {
     "small":  {"n_disaster": 20,  "n_hospital": 6,  "n_ccp": 10, "spatial_clusters": 3},
     "medium": {"n_disaster": 40,  "n_hospital": 10, "n_ccp": 10, "spatial_clusters": 3},
     "large":  {"n_disaster": 70,  "n_hospital": 14, "n_ccp": 10, "spatial_clusters": 3},
     "full":   {"n_disaster": 129, "n_hospital": 16, "n_ccp": 10, "spatial_clusters": 3},
 }
+# 抽樣模式："nested" = small ⊂ medium ⊂ large（固定 shuffle 取前綴）。
+SCALE_SAMPLING_MODE = "nested"
 
 SP_SCENARIO_SIZE = None
 SP_SAMPLE_RATIO = SAMPLE_RATIO

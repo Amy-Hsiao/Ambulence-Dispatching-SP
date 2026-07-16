@@ -45,6 +45,10 @@ DRO_BOX_SCOPE = 0.01
 
 TIME_LIMIT = 3600.0
 MIP_GAP = 1e-4
+# 子程序硬超時 = 求解時限 + 緩衝。必須大於 TIME_LIMIT，否則跑滿時限的 case
+# 會在把結果寫回前就被 subprocess timeout 砍掉，被誤判為 FAIL（Hard timeout）。
+# 緩衝需涵蓋：子程序啟動、產生 instance、建模型、寫結果等時間。
+HARD_TIMEOUT_BUFFER_SEC = 900.0
 COMPUTE_KPIS = False
 STOP_ON_ERROR = False
 
@@ -819,7 +823,7 @@ def run_one_case_subprocess(model_name: str, case: dict[str, Any],
         try:
             completed = subprocess.run(
                 cmd, cwd=ROOT_DIR, stdout=launcher, stderr=subprocess.STDOUT,
-                timeout=TIME_LIMIT, check=False,
+                timeout=TIME_LIMIT + HARD_TIMEOUT_BUFFER_SEC, check=False,
             )
             return_code = completed.returncode
         except subprocess.TimeoutExpired:
@@ -839,7 +843,7 @@ def run_one_case_subprocess(model_name: str, case: dict[str, Any],
             return row
 
         if timed_out:
-            note = f"Hard timeout: case process exceeded {TIME_LIMIT:.0f} seconds"
+            note = f"Hard timeout: case process exceeded {TIME_LIMIT + HARD_TIMEOUT_BUFFER_SEC:.0f} seconds"
         else:
             note = f"Case subprocess failed with exit code {return_code}"
 

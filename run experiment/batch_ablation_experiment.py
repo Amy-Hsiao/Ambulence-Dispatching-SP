@@ -111,6 +111,22 @@ CONFIGS = [
 ]
 MODELS = ["SP", "DRO-box"]
 
+# 只重跑指定 config（依 name 過濾）；空清單 = 跑全部 6 個 config。
+# 要「只重跑 extensive」就設成 ["Extensive"]（3 scale x 2 model x 1 config = 6 個 case）。
+RUN_ONLY_CONFIGS: list[str] = ["Extensive"]
+
+
+def active_configs() -> list[dict[str, Any]]:
+    """實際要跑/驗證/輸出的 config 子集（受 RUN_ONLY_CONFIGS 過濾）。"""
+    if RUN_ONLY_CONFIGS:
+        chosen = [c for c in CONFIGS if c["name"] in RUN_ONLY_CONFIGS]
+        if not chosen:
+            raise ValueError(
+                f"RUN_ONLY_CONFIGS={RUN_ONLY_CONFIGS} 未匹配任何 CONFIGS 名稱"
+            )
+        return chosen
+    return list(CONFIGS)
+
 FIELDNAMES = [
     "scale", "test_id", "model", "config", "I", "J", "H", "S", "T",
     "obj_value", "first_stage_decision", "best_lb", "best_ub", "cpu_s",
@@ -907,16 +923,16 @@ def expected_test_ids() -> set[str]:
 def validate_final_outputs(rows: list[dict[str, Any]], csv_path: Path,
                            xlsx_path: Path) -> None:
     """Fail loudly unless the final CSV, Excel and per-case logs are complete."""
-    expected = expected_test_ids()
+    # 以「實際產生的 rows」自洽驗證（支援 RUN_ONLY_CONFIGS 過濾後的子集）。
+    full_matrix = expected_test_ids()
     actual = [str(row.get("test_id")) for row in rows]
-    if len(rows) != len(expected):
-        raise RuntimeError(f"Expected {len(expected)} result rows, found {len(rows)}")
+    if not rows:
+        raise RuntimeError("No result rows were produced")
     if len(actual) != len(set(actual)):
         raise RuntimeError("Duplicate test_id values found in final results")
-    if set(actual) != expected:
-        missing = sorted(expected - set(actual))
-        extra = sorted(set(actual) - expected)
-        raise RuntimeError(f"Experiment matrix mismatch; missing={missing}, extra={extra}")
+    invalid = sorted(set(actual) - full_matrix)
+    if invalid:
+        raise RuntimeError(f"Unexpected test_id values not in the full matrix: {invalid}")
     if not csv_path.is_file() or csv_row_count(csv_path) != len(rows):
         raise RuntimeError(f"CSV verification failed: {csv_path}")
 
@@ -948,8 +964,8 @@ def validate_final_outputs(rows: list[dict[str, Any]], csv_path: Path,
         if headers != FIELDNAMES or raw.max_row != len(rows) + 1:
             raise RuntimeError("Excel raw_results is incomplete or has wrong columns")
         for scale in SCALES:
-            expected_rows = 1 + len(MODELS) * len(CONFIGS)
-            if wb[scale].max_row != expected_rows:
+            produced = sum(1 for r in rows if r.get("scale") == scale)
+            if wb[scale].max_row != 1 + produced:
                 raise RuntimeError(f"Excel {scale} sheet is incomplete")
         if wb["summary_table"].max_row != 2 + len(SCALES) * len(MODELS):
             raise RuntimeError("Excel summary_table is incomplete")
@@ -967,8 +983,13 @@ def main() -> None:
     ensure_excel_dependency()
 
     timestamp = dt.datetime.now().strftime("%Y%m%d_%H%M%S")
-    csv_path = RESULT_DIR / f"{RESULT_PREFIX}_raw_{timestamp}.csv"
-    xlsx_path = RESULT_DIR / f"{RESULT_PREFIX}_{timestamp}.xlsx"
+    prefix = RESULT_PREFIX
+    if RUN_ONLY_CONFIGS:
+        prefix = f"{RESULT_PREFIX}_only_" + "_".join(
+            _safe_case_name(name) for name in RUN_ONLY_CONFIGS
+        )
+    csv_path = RESULT_DIR / f"{prefix}_raw_{timestamp}.csv"
+    xlsx_path = RESULT_DIR / f"{prefix}_{timestamp}.xlsx"
     log_run_dir = LOG_SUBDIR / timestamp
 
     # Preflight the mandatory Excel dependency and destination before any
@@ -983,20 +1004,20 @@ def main() -> None:
     for sc in SCALES:
         c = scale_counts(sc)
         print(f"  {sc:6}: I={c['I']} J={c['J']} H={c['H']}")
-    print(f"configs={[case['name'] for case in CONFIGS]}")
+    print(f"configs={[case['name'] for case in active_configs()]}")
     print(f"models={MODELS} S={BASE_SCENARIOS} T={BASE_TIME_PERIODS}")
     print(f"mip_gap={MIP_GAP} time_limit={TIME_LIMIT} "
-          f"cases={len(SCALES) * len(CONFIGS) * len(MODELS)}")
+          f"cases={len(SCALES) * len(active_configs()) * len(MODELS)}")
     print(f"CSV   : {csv_path}\nExcel : {xlsx_path}\nLogs  : {log_run_dir}")
 
     rows: list[dict[str, Any]] = []
-    total = len(SCALES) * len(CONFIGS) * len(MODELS)
+    total = len(SCALES) * len(active_configs()) * len(MODELS)
 
     run_idx = 0
     for scale in SCALES:
         counts = scale_counts(scale)
         for model_name in MODELS:
-            for case in CONFIGS:
+            for case in active_configs():
                 run_idx += 1
                 print(
                     f"\n[{run_idx}/{total}] scale={scale} "

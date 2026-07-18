@@ -39,21 +39,16 @@ _STATUS_MAP = {
 
 
 def _configure_cpu_parallel_only(model):
-    """Keep the monolithic formulation unchanged and disable OR accelerators.
+    """Extensive-form baseline solver settings（公平基準）。
 
-    Threads=0 lets Gurobi use the machine's available CPU cores.  The other
-    settings remove presolve, generated cuts, primal heuristics and symmetry
-    processing so the Extensive baseline does not inherit the B&BC ablation
-    enhancements or Gurobi's automatic algorithmic accelerators.
+    只設定 CPU 平行度（Threads=0 用滿所有核心、ConcurrentMIP=1），presolve /
+    cuts / heuristics 等一律採 Gurobi 預設（全部開啟）。論文中「no acceleration」
+    指的是「沒有分解、沒有 B&BC 那套加速技巧」，而非關掉 Gurobi 內建加速；
+    關掉內建加速會讓單體 baseline 在中大規模連可行整數解都找不到、對比不公平。
     """
     settings = {
         "Threads": 0,
         "ConcurrentMIP": 1,
-        "Presolve": 0,
-        "Cuts": 0,
-        "Heuristics": 0.0,
-        "Symmetry": 0,
-        "MIPFocus": 0,
     }
     for name, value in settings.items():
         model.setParam(name, value)

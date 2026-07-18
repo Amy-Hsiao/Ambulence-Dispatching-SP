@@ -87,11 +87,6 @@ class BatchAblationTests(unittest.TestCase):
         self.assertEqual({
             "Threads": 0,
             "ConcurrentMIP": 1,
-            "Presolve": 0,
-            "Cuts": 0,
-            "Heuristics": 0.0,
-            "Symmetry": 0,
-            "MIPFocus": 0,
         }, settings)
         self.assertEqual(settings, model.params)
 

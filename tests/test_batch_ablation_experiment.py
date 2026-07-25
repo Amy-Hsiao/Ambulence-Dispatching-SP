@@ -62,6 +62,10 @@ class _FakePortal:
         print("fake DRO solve")
         return self._result()
 
+    def run_mcvar_model(self, **_kwargs):
+        print("fake MCVaR solve")
+        return self._result()
+
 
 class BatchAblationTests(unittest.TestCase):
     def test_extensive_portal_uses_cpu_parallel_only_parameters(self):
@@ -91,7 +95,7 @@ class BatchAblationTests(unittest.TestCase):
         self.assertEqual(settings, model.params)
 
     def test_exact_36_case_matrix_and_configuration_ladder(self):
-        self.assertEqual(36, len(ABL.expected_test_ids()))
+        self.assertEqual(54, len(ABL.expected_test_ids()))
         expected = [
             ("Extensive", False, 0, 0, False, False),
             ("BBC", False, 0, 0, False, False),
@@ -144,15 +148,16 @@ class BatchAblationTests(unittest.TestCase):
             log_dir = Path(temp_dir)
             portal = _FakePortal()
             row = ABL.run_one_case(
-                {"SP": portal, "DRO-box": portal, "ext": portal},
-                "SP", ABL.CONFIGS[1], {"I": 20, "J": 10, "H": 6},
-                "small", 1, 36, log_dir,
+                {"SP+MCVaR": portal, "DRO-ellipsoidal": portal,
+                 "DRO-polyhedral": portal, "ext": portal},
+                "DRO-ellipsoidal", ABL.CONFIGS[1], {"I": 20, "J": 10, "H": 6},
+                "small", 1, 54, log_dir,
             )
             self.assertEqual("OK", row["status"])
             log_path = Path(row["log_path"])
             self.assertTrue(log_path.is_file())
-            self.assertIn("fake SP solve", log_path.read_text(encoding="utf-8"))
-            self.assertIn("01_small_SP_BBC", log_path.name)
+            self.assertIn("fake DRO solve", log_path.read_text(encoding="utf-8"))
+            self.assertIn("01_small_DRO-ellipsoidal_BBC", log_path.name)
             self.assertEqual(ABL.DEFAULT_MIPFOCUS, row["mip_focus"])
             self.assertEqual(ABL.DEFAULT_HEURISTICS, row["heuristics"])
             self.assertEqual(ABL.DEFAULT_NUMERIC_FOCUS, row["numeric_focus"])
@@ -167,8 +172,8 @@ class BatchAblationTests(unittest.TestCase):
                 side_effect=ABL.subprocess.TimeoutExpired(["python"], 0.01),
             ):
                 row = ABL.run_one_case_subprocess(
-                    "SP", ABL.CONFIGS[1], {"I": 20, "J": 10, "H": 6},
-                    "small", 1, 36, Path(temp_dir),
+                    "DRO-ellipsoidal", ABL.CONFIGS[1], {"I": 20, "J": 10, "H": 6},
+                    "small", 1, 54, Path(temp_dir),
                 )
             self.assertEqual("FAIL", row["status"])
             self.assertEqual("HARD_TIMEOUT", row["solver_status"])
@@ -225,10 +230,10 @@ class BatchAblationTests(unittest.TestCase):
                     ["raw_results", "run_settings", "small", "medium", "large", "summary_table"],
                     wb.sheetnames,
                 )
-                self.assertEqual(37, wb["raw_results"].max_row)
+                self.assertEqual(55, wb["raw_results"].max_row)
                 self.assertEqual(len(ABL.FIELDNAMES), wb["raw_results"].max_column)
                 for scale in ABL.SCALES:
-                    self.assertEqual(13, wb[scale].max_row)
+                    self.assertEqual(19, wb[scale].max_row)
             finally:
                 wb.close()
 

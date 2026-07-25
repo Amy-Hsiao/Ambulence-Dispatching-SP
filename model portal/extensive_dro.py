@@ -114,6 +114,32 @@ def _summarize(model, v, sets):
     }
 
 
+def _apply_risk_objective(model, v, S_sel, p0, risk_cfg):
+    """把「實際 recourse 成本 Q_s」餵進 risk_core 的風險重構（與 B&BC master 同一套）。
+
+    mcvar：obj = C1 + (1-λ)Σp0·Q + λ(φ + 1/(1-α)Σp0·ℓ)，ℓ_s ≥ Q_s − φ。
+    dro_*：mean/cvar 兩段用 risk_core._add_dro_dual_blocks 的對偶展開（box/ellipsoidal/polyhedral）。
+    """
+    C1 = v["first_stage_cost_expr"]
+    Q = {s: v["scenario_cost_expr"][s] for s in S_sel}
+    phi = model.addVar(lb=-GRB.INFINITY, name="phi_var")
+    ell = {s: model.addVar(lb=0.0, name=f"ell[{s}]") for s in S_sel}
+    for s in S_sel:
+        model.addConstr(ell[s] >= Q[s] - phi, name=f"CVaR_ell_{s}")
+    if risk_cfg["type"] == "mcvar":
+        mean_term = gp.quicksum(p0[s] * Q[s] for s in S_sel)
+        cvar_tail = gp.quicksum(p0[s] * ell[s] for s in S_sel)
+    else:
+        mean_term, cvar_tail = risk_core._add_dro_dual_blocks(model, Q, ell, S_sel, p0, risk_cfg)
+    a = risk_cfg["alpha"]
+    lm = risk_cfg["lambda"]
+    model.setObjective(
+        C1 + (1.0 - lm) * mean_term + lm * (phi + (1.0 / (1.0 - a)) * cvar_tail),
+        GRB.MINIMIZE,
+    )
+    model.update()
+
+
 def run_sp_model(scenario_size=None, sample_ratio=None, time_limit=None, mip_gap=None,
                  compute_kpis=False, compute_vss_evpi=False):
     scenario_size = config.SP_SCENARIO_SIZE if scenario_size is None else scenario_size
@@ -151,10 +177,15 @@ def run_dro_model(ambiguity_set="box", scenario_size=None, sample_ratio=None,
     sample_ratio = config.SP_SAMPLE_RATIO if sample_ratio is None else sample_ratio
     time_limit = config.SP_TIME_LIMIT if time_limit is None else time_limit
     mip_gap = config.SP_MIP_GAP if mip_gap is None else mip_gap
-    if ambiguity_set != "box":
-        raise ValueError("extensive_dro 目前僅支援 ambiguity_set='box'。")
-
-    risk_cfg = risk_core.make_risk_cfg("dro_box", alpha=alpha, lam=lam, epsilon_box=scope)
+    rtype = {
+        "box": "dro_box", "ellipsoidal": "dro_ellipsoidal", "polyhedral": "dro_polyhedral",
+    }.get(ambiguity_set)
+    if rtype is None:
+        raise ValueError(f"未知 ambiguity_set={ambiguity_set!r}（box/ellipsoidal/polyhedral）。")
+    scope_kw = {"dro_box": "epsilon_box", "dro_ellipsoidal": "a_e", "dro_polyhedral": "a_p"}[rtype]
+    risk_cfg = risk_core.make_risk_cfg(
+        rtype, alpha=alpha, lam=lam, **({scope_kw: scope} if scope is not None else {})
+    )
 
     log_path = logging_utils.build_sp_log_path(scenario_size, sample_ratio, time_limit, mip_gap)
     with logging_utils.tee_output(log_path):
@@ -163,39 +194,57 @@ def run_dro_model(ambiguity_set="box", scenario_size=None, sample_ratio=None,
         )
         cpu_only_settings = _configure_cpu_parallel_only(model)
         risk_core.validate_risk_cfg_for_probs(risk_cfg, p0)
-
-        # 以「實際 recourse 成本 Q_s」取代 Benders θ_s，套用同一套風險重構。
-        C1 = v["first_stage_cost_expr"]
-        Q = {s: v["scenario_cost_expr"][s] for s in S_sel}
-        phi = model.addVar(lb=-GRB.INFINITY, name="phi_var")
-        ell = {s: model.addVar(lb=0.0, name=f"ell[{s}]") for s in S_sel}
-        for s in S_sel:
-            model.addConstr(ell[s] >= Q[s] - phi, name=f"CVaR_ell_{s}")
-        mean_term, cvar_tail = risk_core._add_dro_dual_blocks(model, Q, ell, S_sel, p0, risk_cfg)
-
-        alpha_v = risk_cfg["alpha"]
-        lam_v = risk_cfg["lambda"]
-        model.setObjective(
-            C1 + (1.0 - lam_v) * mean_term + lam_v * (phi + (1.0 / (1.0 - alpha_v)) * cvar_tail),
-            GRB.MINIMIZE,
-        )
-        model.update()
+        _apply_risk_objective(model, v, S_sel, p0, risk_cfg)
         model.setParam("OutputFlag", 1)
-
         logging_utils.print_run_metadata(
-            "Extensive-DRO(box)",
+            f"Extensive-DRO({ambiguity_set})",
             instance,
             (
                 ("scenario_size_used", len(S_sel)),
                 ("time_limit", time_limit),
                 ("mip_gap", mip_gap),
-                ("risk_alpha", alpha_v),
-                ("risk_lambda", lam_v),
-                ("epsilon_box", risk_cfg["epsilon_box"]),
+                ("risk_alpha", risk_cfg["alpha"]),
+                ("risk_lambda", risk_cfg["lambda"]),
+                ("ambiguity_scope", risk_core.risk_scope(risk_cfg)),
                 *tuple((f"gurobi_{key}", value) for key, value in cpu_only_settings.items()),
             ),
         )
-        print("\nOptimizing Extensive SP+MCVaR+DRO(box) Model (monolithic, no acceleration)...\n")
+        print(f"\nOptimizing Extensive SP+MCVaR+DRO({ambiguity_set}) Model "
+              f"(monolithic, no acceleration)...\n")
+        model.optimize()
+        summary = _summarize(model, v, instance["sets"])
+    return model, summary
+
+
+def run_mcvar_model(scenario_size=None, sample_ratio=None, time_limit=None,
+                    mip_gap=None, alpha=None, lam=None, compute_kpis=False):
+    scenario_size = config.SP_SCENARIO_SIZE if scenario_size is None else scenario_size
+    sample_ratio = config.SP_SAMPLE_RATIO if sample_ratio is None else sample_ratio
+    time_limit = config.SP_TIME_LIMIT if time_limit is None else time_limit
+    mip_gap = config.SP_MIP_GAP if mip_gap is None else mip_gap
+    risk_cfg = risk_core.make_risk_cfg("mcvar", alpha=alpha, lam=lam)
+
+    log_path = logging_utils.build_sp_log_path(scenario_size, sample_ratio, time_limit, mip_gap)
+    with logging_utils.tee_output(log_path):
+        instance, model, v, S_sel, p0 = _select_and_build(
+            scenario_size, sample_ratio, time_limit, mip_gap
+        )
+        cpu_only_settings = _configure_cpu_parallel_only(model)
+        _apply_risk_objective(model, v, S_sel, p0, risk_cfg)
+        model.setParam("OutputFlag", 1)
+        logging_utils.print_run_metadata(
+            "Extensive-MCVaR",
+            instance,
+            (
+                ("scenario_size_used", len(S_sel)),
+                ("time_limit", time_limit),
+                ("mip_gap", mip_gap),
+                ("risk_alpha", risk_cfg["alpha"]),
+                ("risk_lambda", risk_cfg["lambda"]),
+                *tuple((f"gurobi_{key}", value) for key, value in cpu_only_settings.items()),
+            ),
+        )
+        print("\nOptimizing Extensive SP+MCVaR Model (monolithic, no acceleration)...\n")
         model.optimize()
         summary = _summarize(model, v, instance["sets"])
     return model, summary

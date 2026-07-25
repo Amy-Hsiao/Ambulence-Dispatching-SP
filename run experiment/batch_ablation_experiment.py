@@ -41,7 +41,10 @@ BASE_HOSPITAL_CAPACITY_MULTIPLIER = 1.0
 
 RISK_ALPHA = 0.9
 RISK_LAMBDA = 0.5
-DRO_BOX_SCOPE = 0.01
+# 各 ambiguity set 的 scope（box 這次不做；ellipsoidal=a_E, polyhedral=a_P）
+BOX_SCOPE = 0.01
+ELLIPSOIDAL_SCOPE = 0.0005
+POLYHEDRAL_SCOPE = 0.001
 
 TIME_LIMIT = 3600.0
 MIP_GAP = 1e-4
@@ -52,7 +55,7 @@ HARD_TIMEOUT_BUFFER_SEC = 900.0
 COMPUTE_KPIS = False
 STOP_ON_ERROR = False
 
-RESULT_PREFIX = "BBC_ablation"
+RESULT_PREFIX = "BBC_ablation_MCVaR_Ell_Poly"
 LOG_SUBDIR_NAME = "bbc ablation"
 
 
@@ -92,6 +95,7 @@ import logging_utils  # noqa: E402
 SP_MODEL_PATH = ROOT_DIR / "model portal" / "benders bbc.py"
 DRO_MODEL_PATH = ROOT_DIR / "model portal" / "dro bbc.py"
 EXTENSIVE_MODEL_PATH = ROOT_DIR / "model portal" / "extensive_dro.py"
+MCVAR_MODEL_PATH = ROOT_DIR / "model portal" / "mcvar bbc.py"
 
 DEFAULT_ROOT_SEED_ITERS = int(cfg.BENDERS_ROOT_SEED_ITERS)
 DEFAULT_ROOT_CUT_ROUNDS = int(cfg.BENDERS_ROOT_CUT_ROUNDS)
@@ -109,11 +113,19 @@ CONFIGS = [
     {"name": "BBC+WS+RS+UC", "ev": True, "seed": DEFAULT_ROOT_SEED_ITERS, "rounds": DEFAULT_ROOT_CUT_ROUNDS, "user": True, "pareto": False},
     {"name": "BBC+WS+RS+UC+Pareto", "ev": True, "seed": DEFAULT_ROOT_SEED_ITERS, "rounds": DEFAULT_ROOT_CUT_ROUNDS, "user": True, "pareto": True},
 ]
-MODELS = ["SP", "DRO-box"]
+# 這次 model 維度（risk 類型）：SP 改為 SP+MCVaR；box 不做；加 ellipsoidal / polyhedral。
+# kind="mcvar"（無 ambiguity set）或 "dro"（需 ambiguity_set + scope）。
+MODEL_SPECS = [
+    {"name": "SP+MCVaR",        "kind": "mcvar"},
+    {"name": "DRO-ellipsoidal", "kind": "dro", "ambiguity_set": "ellipsoidal", "scope": ELLIPSOIDAL_SCOPE},
+    {"name": "DRO-polyhedral",  "kind": "dro", "ambiguity_set": "polyhedral",  "scope": POLYHEDRAL_SCOPE},
+]
+MODELS = [spec["name"] for spec in MODEL_SPECS]
+_SPEC_BY_NAME = {spec["name"]: spec for spec in MODEL_SPECS}
 
 # 只重跑指定 config（依 name 過濾）；空清單 = 跑全部 6 個 config。
 # 要「只重跑 extensive」就設成 ["Extensive"]（3 scale x 2 model x 1 config = 6 個 case）。
-RUN_ONLY_CONFIGS: list[str] = ["Extensive"]
+RUN_ONLY_CONFIGS: list[str] = []
 
 
 def active_configs() -> list[dict[str, Any]]:
@@ -394,9 +406,10 @@ def _write_settings_sheet(wb, run_id: str, log_run_dir: Path | None,
         ("time_periods", BASE_TIME_PERIODS),
         ("time_limit_s_per_case", TIME_LIMIT),
         ("mip_gap", MIP_GAP),
-        ("dro_alpha", RISK_ALPHA),
-        ("dro_lambda", RISK_LAMBDA),
-        ("dro_box_scope", DRO_BOX_SCOPE),
+        ("risk_alpha", RISK_ALPHA),
+        ("risk_lambda", RISK_LAMBDA),
+        ("ellipsoidal_scope", ELLIPSOIDAL_SCOPE),
+        ("polyhedral_scope", POLYHEDRAL_SCOPE),
         ("bbc_multi_cut_common", True),
         ("bbc_parallel_oracles_common", int(cfg.BENDERS_PARALLEL_ORACLES)),
         ("bbc_mip_focus_common", DEFAULT_MIPFOCUS),
@@ -665,18 +678,19 @@ def _run_one_case_logged(portals: dict[str, Any], model_name: str, case: dict[st
     try:
         try:
             with temporary_config(case):
-                if model_name == "SP":
-                    model, summary = portal.run_sp_model(
+                spec = _SPEC_BY_NAME[model_name]
+                if spec["kind"] == "mcvar":
+                    model, summary = portal.run_mcvar_model(
                         scenario_size=BASE_SCENARIOS, sample_ratio=BASE_SAMPLE_RATIO,
                         time_limit=TIME_LIMIT, mip_gap=MIP_GAP,
-                        compute_kpis=COMPUTE_KPIS, compute_vss_evpi=False,
+                        alpha=RISK_ALPHA, lam=RISK_LAMBDA, compute_kpis=COMPUTE_KPIS,
                     )
                 else:
                     model, summary = portal.run_dro_model(
-                        ambiguity_set="box", scenario_size=BASE_SCENARIOS,
+                        ambiguity_set=spec["ambiguity_set"], scenario_size=BASE_SCENARIOS,
                         sample_ratio=BASE_SAMPLE_RATIO, time_limit=TIME_LIMIT,
                         mip_gap=MIP_GAP, alpha=RISK_ALPHA, lam=RISK_LAMBDA,
-                        scope=DRO_BOX_SCOPE, compute_kpis=COMPUTE_KPIS,
+                        scope=spec["scope"], compute_kpis=COMPUTE_KPIS,
                     )
         finally:
             row["wall_s"] = f"{time.time() - wall_start:.2f}"
@@ -796,14 +810,15 @@ def _single_case_cli(argv: list[str]) -> None:
     counts = scale_counts(scale)
     log_run_dir = Path(log_dir_raw).resolve()
     result_path = Path(result_raw).resolve()
+    spec = _SPEC_BY_NAME[model_name]
     if case.get("engine") == "extensive":
         portals = {
             "ext": load_portal(EXTENSIVE_MODEL_PATH, "ablation_extensive_portal_child")
         }
-    elif model_name == "SP":
-        portals = {"SP": load_portal(SP_MODEL_PATH, "ablation_sp_portal_child")}
+    elif spec["kind"] == "mcvar":
+        portals = {model_name: load_portal(MCVAR_MODEL_PATH, "ablation_mcvar_portal_child")}
     else:
-        portals = {"DRO-box": load_portal(DRO_MODEL_PATH, "ablation_dro_portal_child")}
+        portals = {model_name: load_portal(DRO_MODEL_PATH, "ablation_dro_portal_child")}
     original_scale = cfg.EXPERIMENT_SCALE
     try:
         cfg.EXPERIMENT_SCALE = scale
@@ -974,11 +989,6 @@ def validate_final_outputs(rows: list[dict[str, Any]], csv_path: Path,
 
 
 def main() -> None:
-    if DRO_BOX_SCOPE > 1.0 / BASE_SCENARIOS + 1e-12:
-        raise ValueError(
-            f"DRO_BOX_SCOPE={DRO_BOX_SCOPE} > 1/S={1.0 / BASE_SCENARIOS:.6f}"
-        )
-
     ensure_solver_dependency()
     ensure_excel_dependency()
 

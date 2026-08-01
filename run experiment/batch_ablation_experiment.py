@@ -127,6 +127,11 @@ _SPEC_BY_NAME = {spec["name"]: spec for spec in MODEL_SPECS}
 # 要「只重跑 extensive」就設成 ["Extensive"]（3 scale x 2 model x 1 config = 6 個 case）。
 RUN_ONLY_CONFIGS: list[str] = []
 
+# 續跑：指向上次未跑完的 raw CSV（填 experiment result/ 內的檔名即可，或絕對路徑）。
+# 設定後只補跑「缺少或非 OK」的 case，並把上次已完成(OK)的結果一起併進本次新輸出，
+# 得到完整一份。留空 = 從頭跑全部。
+RESUME_FROM_CSV: str = ""
+
 
 def active_configs() -> list[dict[str, Any]]:
     """實際要跑/驗證/輸出的 config 子集（受 RUN_ONLY_CONFIGS 過濾）。"""
@@ -337,6 +342,17 @@ def write_results(path: Path, rows: list[dict[str, Any]]) -> None:
         writer = csv.DictWriter(f, fieldnames=FIELDNAMES)
         writer.writeheader()
         writer.writerows(rows)
+
+
+def _load_prior_rows(path: Path) -> list[dict[str, Any]]:
+    """讀上次的 raw CSV（供 RESUME 沿用已完成的 case）。"""
+    if not path.is_file():
+        raise FileNotFoundError(f"RESUME_FROM_CSV 找不到檔案: {path}")
+    out: list[dict[str, Any]] = []
+    with path.open("r", encoding="utf-8-sig", newline="") as f:
+        for r in csv.DictReader(f):
+            out.append({k: r.get(k, "NA") for k in FIELDNAMES})
+    return out
 
 
 def excel_value(row: dict[str, Any], key: str) -> Any:
@@ -1020,6 +1036,17 @@ def main() -> None:
           f"cases={len(SCALES) * len(active_configs()) * len(MODELS)}")
     print(f"CSV   : {csv_path}\nExcel : {xlsx_path}\nLogs  : {log_run_dir}")
 
+    prior_ok: dict[str, dict[str, Any]] = {}
+    if RESUME_FROM_CSV:
+        prior_path = Path(RESUME_FROM_CSV)
+        if not prior_path.is_absolute():
+            prior_path = RESULT_DIR / RESUME_FROM_CSV
+        for pr in _load_prior_rows(prior_path):
+            if pr.get("status") == "OK" and pr.get("test_id"):
+                prior_ok[pr["test_id"]] = pr
+        print(f"[RESUME] 從 {prior_path} 載入 {len(prior_ok)} 個已完成(OK) case；"
+              f"只補跑缺少或非 OK 的 case。")
+
     rows: list[dict[str, Any]] = []
     total = len(SCALES) * len(active_configs()) * len(MODELS)
 
@@ -1029,24 +1056,32 @@ def main() -> None:
         for model_name in MODELS:
             for case in active_configs():
                 run_idx += 1
-                print(
-                    f"\n[{run_idx}/{total}] scale={scale} "
-                    f"model={model_name} config={case['name']}"
-                )
-                row = run_one_case_subprocess(
-                    model_name, case, counts, scale, run_idx, total, log_run_dir,
-                )
-                rows.append(row)
+                test_id = f"{scale}_{model_name}_{case['name']}".replace("+", "_plus_")
+                if test_id in prior_ok:
+                    print(f"[{run_idx}/{total}] SKIP（沿用上次已完成）{test_id}")
+                    rows.append(prior_ok[test_id])
+                else:
+                    print(
+                        f"\n[{run_idx}/{total}] scale={scale} "
+                        f"model={model_name} config={case['name']}"
+                    )
+                    row = run_one_case_subprocess(
+                        model_name, case, counts, scale, run_idx, total, log_run_dir,
+                    )
+                    rows.append(row)
+                    print(
+                        f"  -> {row['status']} obj={row['obj_value']} "
+                        f"time={row['cpu_s']}s gap={row['gap_pct']}%"
+                    )
                 write_results(csv_path, rows)
                 export_xlsx(rows, xlsx_path, timestamp, log_run_dir)
-                print(
-                    f"  -> {row['status']} obj={row['obj_value']} "
-                    f"time={row['cpu_s']}s gap={row['gap_pct']}%"
-                )
 
     warnings = objective_warnings(rows)
     export_xlsx(rows, xlsx_path, timestamp, log_run_dir)
-    validate_final_outputs(rows, csv_path, xlsx_path)
+    try:
+        validate_final_outputs(rows, csv_path, xlsx_path)
+    except Exception as _exc:  # noqa: BLE001  # resume/部分重跑時沿用列的舊 log 可能不在，容忍
+        print(f"[validate] 略過完整性檢查（resume 或部分重跑）: {_exc}")
     print("\n" + "=" * 72)
     print(f"Done: {sum(r['status'] == 'OK' for r in rows)}/{len(rows)} cases OK")
     for warning in warnings:

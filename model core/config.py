@@ -12,9 +12,15 @@ from pathlib import Path
 # ==========================================
 # Phase R 重構：config.py 移入 model core/，DATA_DIR 改以檔案位置定位專案根（原 Path("data") 相對 cwd）
 DATA_DIR = Path(__file__).resolve().parents[1] / "data"
-DISASTER_CSV = "east_district_disaster.csv"
-CCP_CSV = "east_district_ccp.csv"
-HOSPITAL_CSV = "east_district_hospital.csv"
+# 2026-08 放大規模：資料來源由「東區」改為「台北市全區」。
+#   disaster_Taipei.csv  : 229 個災區節點
+#   ccp_Taipei_50.csv    : 50 個 CCP 候選點（16 個真實 CCP + 34 個由災區節點
+#                          K-means 質心衍生的候選點；見
+#                          run experiment/build_ccp_candidates_taipei.py）
+#   hospital_Taipei.csv  : 20 家醫院
+DISASTER_CSV = "disaster_Taipei.csv"
+CCP_CSV = "ccp_Taipei_50.csv"
+HOSPITAL_CSV = "hospital_Taipei.csv"
 
 MASTER_SEED = 42
 SCENARIOS = 5
@@ -44,17 +50,39 @@ CCP_RESOURCE_SCALE_ROUNDING = "ceil"
 # 當 generate_data 未帶 sample_ratio 時，依 EXPERIMENT_SCALE 抽出 (I,J,H) 與
 # 縮放後參數。"full" = 全量（等同 legacy 全用）。傳 sample_ratio 則走 legacy 路徑。
 EXPERIMENT_SCALE = "full"    # "small" | "medium" | "large" | "full"
-N_DISASTER_FULL = 129        # 東區全量（縮放基準；實際以 CSV 筆數為準）
-N_HOSPITAL_FULL = 16
-N_CCP_FULL = 10
+
+# ── 校準基準（PARAMETERS 區的數值是在「東區全量」這個規模上校準出來的）──
+# 縮放一律以此為分母，才不會因為換資料集（東區 → 台北）而讓資源憑空放大/縮小。
+# ⚠️ 這三個常數綁定 PARAMETERS 的校準情境，除非重新校準 PARAMETERS，否則不要改。
+PARAM_CALIB_N_DISASTER = 129   # 校準時的 |I|
+PARAM_CALIB_N_CCP      = 10    # 校準時的 |J|
+PARAM_CALIB_N_HOSPITAL = 16    # 校準時的 |H|
+
+# ── 台北全量（= CSV 實際筆數，供 "full" profile 與上限驗證用）──
+N_DISASTER_FULL = 229
+N_CCP_FULL = 50
+N_HOSPITAL_FULL = 20
+
+# 2026-08 放大規模（老師要求）：災區 70/100/130、CCP 50、醫院 18。
 SCALE_PROFILES = {
-    "small":  {"n_disaster": 20,  "n_hospital": 6,  "n_ccp": 10, "spatial_clusters": 3},
-    "medium": {"n_disaster": 40,  "n_hospital": 10, "n_ccp": 10, "spatial_clusters": 3},
-    "large":  {"n_disaster": 70,  "n_hospital": 14, "n_ccp": 10, "spatial_clusters": 3},
-    "full":   {"n_disaster": 129, "n_hospital": 16, "n_ccp": 10, "spatial_clusters": 3},
+    "small":  {"n_disaster": 70,  "n_hospital": 18, "n_ccp": 50, "spatial_clusters": 3},
+    "medium": {"n_disaster": 100, "n_hospital": 18, "n_ccp": 50, "spatial_clusters": 3},
+    "large":  {"n_disaster": 130, "n_hospital": 18, "n_ccp": 50, "spatial_clusters": 3},
+    "full":   {"n_disaster": 229, "n_hospital": 20, "n_ccp": 50, "spatial_clusters": 3},
 }
 # 抽樣模式："nested" = small ⊂ medium ⊂ large（固定 shuffle 取前綴）。
 SCALE_SAMPLING_MODE = "nested"
+
+# ── per-CCP 上限的縮放語意 ──
+# "demand_only"  ：per-CCP 上限只隨總需求 (|I|) 縮放，不隨候選點數 |J| 稀釋。
+#                  理由：單一 CCP 的收治量/人力上限是「設施的物理屬性」，
+#                  不會因為候選地點變多就變小。此時全域資源池
+#                  (total_available_staff) 仍是綁定約束，會限制實際開設數量，
+#                  一階決策變成「從 50 個候選點挑約 5~6 個」的選址問題。
+# "per_ccp_load" ：per-CCP 上限額外乘 (PARAM_CALIB_N_CCP / |J|)，維持
+#                  「Σ per-CCP 上限 / 全域池」比值與校準情境完全相同。
+#                  此時會開出約 26 個 CCP，目標值被固定開設成本主導。
+CCP_UPPER_BOUND_SCALING = "demand_only"   # "demand_only" | "per_ccp_load"
 
 SP_SCENARIO_SIZE = None
 SP_SAMPLE_RATIO = SAMPLE_RATIO
@@ -238,19 +266,51 @@ def _indexed_scalar(value: float, ids: list[str]) -> dict[str, float]:
 
 
 def resolve_scale(scale: str) -> dict[str, Any]:
-    """Resolve a named network scale and its two resource-scaling drivers."""
+    """Resolve a named network scale and its resource-scaling drivers.
+
+    三個驅動因子（分母一律是 PARAM_CALIB_*，即 PARAMETERS 的校準規模）：
+
+    * ``demand_scale``   s_D = |I| / I_calib
+      驅動「外延總量」：total_available_staff、total_available_ccp_ambulances。
+      每個災區每期產生 U[1,5] 需求，故系統總需求 ∝ |I|。
+
+    * ``ccp_scale``      s_J = s_D                      (demand_only)
+                         s_D · (J_calib / |J|)          (per_ccp_load)
+      驅動 per-CCP 上限。預設 demand_only：單一 CCP 的容量是設施物理屬性，
+      不因候選點數量而改變；開設數量由全域資源池與固定開設成本自然限制。
+
+    * ``hospital_scale`` s_H = s_D · (H_calib / |H|)
+      驅動 per-醫院上限。醫院總轉送量 ∝ |I|，per-醫院負載 ∝ |I| / |H|，
+      故以此因子維持 per-醫院鬆緊度與校準情境一致。
+    """
     normalized = str(scale).strip().lower()
     if normalized not in SCALE_PROFILES:
         valid = ", ".join(SCALE_PROFILES)
         raise ValueError(f"Unknown experiment scale {scale!r}; expected one of: {valid}")
     profile = SCALE_PROFILES[normalized]
-    demand_scale = profile["n_disaster"] / N_DISASTER_FULL
-    hospital_scale = demand_scale / (profile["n_hospital"] / N_HOSPITAL_FULL)
+
+    demand_scale = profile["n_disaster"] / PARAM_CALIB_N_DISASTER
+
+    mode = str(CCP_UPPER_BOUND_SCALING).strip().lower()
+    if mode == "demand_only":
+        ccp_scale = demand_scale
+    elif mode == "per_ccp_load":
+        ccp_scale = demand_scale * (PARAM_CALIB_N_CCP / profile["n_ccp"])
+    else:
+        raise ValueError(
+            f"Unsupported CCP_UPPER_BOUND_SCALING: {CCP_UPPER_BOUND_SCALING!r}; "
+            "expected 'demand_only' or 'per_ccp_load'"
+        )
+
+    hospital_scale = demand_scale * (PARAM_CALIB_N_HOSPITAL / profile["n_hospital"])
+
     return {
         **profile,
         "scale": normalized,
         "demand_scale": demand_scale,
+        "ccp_scale": ccp_scale,
         "hospital_scale": hospital_scale,
+        "ccp_upper_bound_scaling": mode,
     }
 
 
@@ -273,9 +333,12 @@ def _build_deterministic_parameters(
     ccp_resource_scale=1.0,
     demand_scale=None,
     hospital_scale=1.0,
+    ccp_scale=None,
 ):
     # ccp_resource_scale is retained for legacy sample_ratio/ccp_sample_size runs.
     demand_scale = ccp_resource_scale if demand_scale is None else demand_scale
+    # per-CCP 上限的縮放因子；未指定時退回 demand_scale（= 舊行為）。
+    ccp_scale = demand_scale if ccp_scale is None else ccp_scale
     supply_allocation_cost = {
         h: {j: float(PARAMETERS["supply_allocation_cost_unit"]) for j in ccp_ids}
         for h in hospital_ids
@@ -291,13 +354,13 @@ def _build_deterministic_parameters(
             _scale_total_resource(PARAMETERS["hospital_supply_upper_bound"], hospital_scale), hospital_ids
         ),
         "ccp_staff_upper_bound": _indexed_scalar(
-            _scale_total_resource(PARAMETERS["ccp_staff_upper_bound"], demand_scale), ccp_ids
+            _scale_total_resource(PARAMETERS["ccp_staff_upper_bound"], ccp_scale), ccp_ids
         ),
         "ccp_ambulance_upper_bound": _indexed_scalar(
-            _scale_total_resource(PARAMETERS["ccp_ambulance_upper_bound"], demand_scale), ccp_ids
+            _scale_total_resource(PARAMETERS["ccp_ambulance_upper_bound"], ccp_scale), ccp_ids
         ),
         "ccp_supply_upper_bound": _indexed_scalar(
-            _scale_total_resource(PARAMETERS["ccp_supply_upper_bound"], demand_scale), ccp_ids
+            _scale_total_resource(PARAMETERS["ccp_supply_upper_bound"], ccp_scale), ccp_ids
         ),
         "hospital_ambulance_fleet": _indexed_scalar(
             _scale_total_resource(PARAMETERS["hospital_ambulance_fleet"], hospital_scale), hospital_ids
@@ -305,7 +368,7 @@ def _build_deterministic_parameters(
         "ccp_ambulance_casualty_capacity": float(PARAMETERS["ccp_ambulance_casualty_capacity"]),
         "hospital_ambulance_casualty_capacity": float(PARAMETERS["hospital_ambulance_casualty_capacity"]),
         "ccp_physical_capacity_by_severity": {
-            severity: _scale_total_resource(value, demand_scale)
+            severity: _scale_total_resource(value, ccp_scale)
             for severity, value in PARAMETERS["ccp_physical_capacity_by_severity"].items()
         },
         "treatment_duration_by_severity": PARAMETERS["treatment_duration_by_severity"],
@@ -649,6 +712,7 @@ def generate_data(
     actual_ccp_count = len(ccp_ids)
     if profile is not None:
         demand_scale = float(profile["demand_scale"])
+        ccp_scale = float(profile["ccp_scale"])
         hospital_scale = float(profile["hospital_scale"])
         ccp_resource_scale = demand_scale
         sampling_mode = "nested_profile"
@@ -659,6 +723,7 @@ def generate_data(
             else 1.0
         )
         demand_scale = ccp_resource_scale
+        ccp_scale = ccp_resource_scale
         hospital_scale = 1.0
         sampling_mode = "legacy_ratio"
 
@@ -678,11 +743,21 @@ def generate_data(
         ccp_resource_scale=ccp_resource_scale,
         demand_scale=demand_scale,
         hospital_scale=hospital_scale,
+        ccp_scale=ccp_scale,
     )
     resource_scaling = {
         "scale": profile["scale"] if profile is not None else None,
         "demand_scale": demand_scale,
+        "ccp_scale": ccp_scale,
         "hospital_scale": hospital_scale,
+        "ccp_upper_bound_scaling": (
+            profile.get("ccp_upper_bound_scaling") if profile is not None else "legacy"
+        ),
+        "param_calibration_basis": {
+            "n_disaster": PARAM_CALIB_N_DISASTER,
+            "n_ccp": PARAM_CALIB_N_CCP,
+            "n_hospital": PARAM_CALIB_N_HOSPITAL,
+        },
         "ccp_total_resources_scaled": SCALE_CCP_TOTAL_RESOURCES,
         "base_ccp_count": full_n_ccp,
         "actual_ccp_count": actual_ccp_count,

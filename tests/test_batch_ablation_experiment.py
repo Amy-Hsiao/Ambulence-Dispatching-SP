@@ -94,8 +94,18 @@ class BatchAblationTests(unittest.TestCase):
         }, settings)
         self.assertEqual(settings, model.params)
 
-    def test_exact_36_case_matrix_and_configuration_ladder(self):
-        self.assertEqual(54, len(ABL.expected_test_ids()))
+    def test_exact_case_matrix_and_configuration_ladder(self):
+        # 3 scale × 4 model × 6 config = 72
+        self.assertEqual(["small", "medium", "large"], ABL.SCALES)
+        self.assertEqual(
+            ["SP+MCVaR", "DRO-box", "DRO-ellipsoidal", "DRO-polyhedral"],
+            ABL.MODELS,
+        )
+        self.assertEqual(
+            len(ABL.SCALES) * len(ABL.MODELS) * len(ABL.CONFIGS),
+            len(ABL.expected_test_ids()),
+        )
+        self.assertEqual(72, len(ABL.expected_test_ids()))
         expected = [
             ("Extensive", False, 0, 0, False, False),
             ("BBC", False, 0, 0, False, False),
@@ -230,10 +240,29 @@ class BatchAblationTests(unittest.TestCase):
                     ["raw_results", "run_settings", "small", "medium", "large", "summary_table"],
                     wb.sheetnames,
                 )
-                self.assertEqual(55, wb["raw_results"].max_row)
+                self.assertEqual(len(rows) + 1, wb["raw_results"].max_row)
                 self.assertEqual(len(ABL.FIELDNAMES), wb["raw_results"].max_column)
+                per_scale = len(ABL.MODELS) * len(ABL.CONFIGS)
                 for scale in ABL.SCALES:
-                    self.assertEqual(19, wb[scale].max_row)
+                    self.assertEqual(per_scale + 1, wb[scale].max_row)
+
+                # summary_table：每個 config 一組子欄位，且第一個子欄位是 Obj Value
+                summary = wb["summary_table"]
+                n_left = 5
+                n_sub = len(ABL.SUMMARY_SUBCOLUMNS)
+                self.assertEqual("Obj Value", ABL.SUMMARY_SUBCOLUMNS[0][0])
+                self.assertEqual("obj_value", ABL.SUMMARY_SUBCOLUMNS[0][1])
+                self.assertEqual(
+                    n_left + len(ABL.CONFIGS) * n_sub, summary.max_column
+                )
+                self.assertEqual(
+                    2 + len(ABL.SCALES) * len(ABL.MODELS), summary.max_row
+                )
+                # 每個 config 區塊的第一欄標題都是 Obj Value，且有實際數值
+                for idx in range(len(ABL.CONFIGS)):
+                    col = n_left + 1 + idx * n_sub
+                    self.assertEqual("Obj Value", summary.cell(2, col).value)
+                    self.assertEqual(100.0, summary.cell(3, col).value)
             finally:
                 wb.close()
 

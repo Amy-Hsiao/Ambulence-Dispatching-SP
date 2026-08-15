@@ -1,10 +1,20 @@
 #!/usr/bin/env python3
-"""B&BC acceleration ablation runner（實驗三，plan/12）。
+"""B&BC acceleration ablation runner（實驗三，plan/12 + plan/16）。
 
-固定同一個隨機 instance，依序比較 Extensive、BBC、BBC+WS、BBC+WS+RS、
-BBC+WS+RS+UC、BBC+WS+RS+UC+Pareto；模型為純 SP 與
-SP+MCVaR+DRO(box)。每個 case 都有獨立 log，並在每個 case 後以原子方式
-重寫 raw CSV 與完整 Excel；單一 case 失敗會留下 FAIL 記錄並繼續。
+2026-08 放大規模版本
+--------------------
+* 資料：台北市全區（災區 229 / CCP 候選點 50 / 醫院 20）
+* 規模：small = I70, medium = I100, large = I130；三者 |J| = 50、|H| = 18
+* 模型（4 種）：SP+MCVaR、DRO-box、DRO-ellipsoidal、DRO-polyhedral
+* 配置（6 種）：Extensive、BBC、BBC+WS、BBC+WS+RS、BBC+WS+RS+UC、
+  BBC+WS+RS+UC+Pareto
+  → 共 3 × 4 × 6 = 72 個 case
+* 求解：每個 case 上限 2 小時；relative MIP gap ≤ 1% 即提早結束
+
+固定同一個隨機 instance（同 scale 下所有 config / model 共用），每個 case
+都有獨立 log，並在每個 case 後以原子方式重寫 raw CSV 與完整 Excel；
+單一 case 失敗會留下 FAIL 記錄並繼續。中斷後把最新的 raw CSV 檔名填進
+RESUME_FROM_CSV 即可從中斷處續跑。
 """
 from __future__ import annotations
 
@@ -41,21 +51,40 @@ BASE_HOSPITAL_CAPACITY_MULTIPLIER = 1.0
 
 RISK_ALPHA = 0.9
 RISK_LAMBDA = 0.5
-# 各 ambiguity set 的 scope（box 這次不做；ellipsoidal=a_E, polyhedral=a_P）
+# 各 ambiguity set 的 scope（box=ε̄_B, ellipsoidal=a_E, polyhedral=a_P）
+# box 的 ε̄_B 必須 ≤ min_s p0_s；等權重 S=30 時 = 1/30 ≈ 0.0333，故 0.01 合法。
 BOX_SCOPE = 0.01
 ELLIPSOIDAL_SCOPE = 0.0005
 POLYHEDRAL_SCOPE = 0.001
 
-TIME_LIMIT = 3600.0
-MIP_GAP = 1e-4
+# ── 求解時間 / 收斂門檻（2026-08 放大規模後調整）──
+# TIME_LIMIT：單一 case 的求解時間上限 = 2 小時。
+# MIP_GAP   ：提早結束門檻。Gurobi 一旦達到 relative MIP gap ≤ 1% 就立刻停止，
+#             不會跑滿 2 小時；跑不到 1% 的 case 才會用滿 TIME_LIMIT。
+#             六種 config 用同一個門檻，時間比較才公平（同收斂精度比時間）。
+TIME_LIMIT = 7200.0     # 2 小時
+MIP_GAP = 0.01          # 1% 即提早結束
 # 子程序硬超時 = 求解時限 + 緩衝。必須大於 TIME_LIMIT，否則跑滿時限的 case
 # 會在把結果寫回前就被 subprocess timeout 砍掉，被誤判為 FAIL（Hard timeout）。
 # 緩衝需涵蓋：子程序啟動、產生 instance、建模型、寫結果等時間。
-HARD_TIMEOUT_BUFFER_SEC = 900.0
+#
+# 放大規模後兩種引擎的建模成本差很多，故分開設定：
+#   * B&BC   ：master 只有 50 個 0-1 + 30 個 θ；oracle 每情境約 10~18 萬變數，
+#              逐一建立，建模很快 → 30 分鐘緩衝綽綽有餘。
+#   * Extensive：一次建出全部情境，large 高達約 530 萬個變數
+#              （FI = S·|I|·|J|·|L|·|T| = 30×130×50×3×8 = 468 萬），
+#              光是 gurobipy 建模就可能數十分鐘 → 給 90 分鐘緩衝，
+#              避免「真的跑滿 2 小時求解」的 case 被誤記成 Hard timeout。
+HARD_TIMEOUT_BUFFER_SEC = 1800.0            # B&BC 類（6 個 config 中的 5 個）
+HARD_TIMEOUT_BUFFER_SEC_EXTENSIVE = 5400.0  # Extensive form
 COMPUTE_KPIS = False
 STOP_ON_ERROR = False
 
-RESULT_PREFIX = "BBC_ablation_MCVaR_Ell_Poly"
+# Excel 檔被 Excel.exe 鎖住時的重試設定（Windows 常見）。
+EXCEL_REPLACE_RETRIES = 5
+EXCEL_REPLACE_RETRY_SLEEP_SEC = 3.0
+
+RESULT_PREFIX = "BBC_ablation_MCVaR_Box_Ell_Poly"
 LOG_SUBDIR_NAME = "bbc ablation"
 
 
@@ -113,10 +142,12 @@ CONFIGS = [
     {"name": "BBC+WS+RS+UC", "ev": True, "seed": DEFAULT_ROOT_SEED_ITERS, "rounds": DEFAULT_ROOT_CUT_ROUNDS, "user": True, "pareto": False},
     {"name": "BBC+WS+RS+UC+Pareto", "ev": True, "seed": DEFAULT_ROOT_SEED_ITERS, "rounds": DEFAULT_ROOT_CUT_ROUNDS, "user": True, "pareto": True},
 ]
-# 這次 model 維度（risk 類型）：SP 改為 SP+MCVaR；box 不做；加 ellipsoidal / polyhedral。
+# model 維度（risk 類型），2026-08 重跑：四種全做。
+#   SP+MCVaR / SP+MCVaR+DRO(box) / +DRO(ellipsoidal) / +DRO(polyhedral)
 # kind="mcvar"（無 ambiguity set）或 "dro"（需 ambiguity_set + scope）。
 MODEL_SPECS = [
     {"name": "SP+MCVaR",        "kind": "mcvar"},
+    {"name": "DRO-box",         "kind": "dro", "ambiguity_set": "box",         "scope": BOX_SCOPE},
     {"name": "DRO-ellipsoidal", "kind": "dro", "ambiguity_set": "ellipsoidal", "scope": ELLIPSOIDAL_SCOPE},
     {"name": "DRO-polyhedral",  "kind": "dro", "ambiguity_set": "polyhedral",  "scope": POLYHEDRAL_SCOPE},
 ]
@@ -127,9 +158,17 @@ _SPEC_BY_NAME = {spec["name"]: spec for spec in MODEL_SPECS}
 # 要「只重跑 extensive」就設成 ["Extensive"]（3 scale x 2 model x 1 config = 6 個 case）。
 RUN_ONLY_CONFIGS: list[str] = []
 
-# 續跑：指向上次未跑完的 raw CSV（填 experiment result/ 內的檔名即可，或絕對路徑）。
+# ── 中斷續跑 ──
+# 指向上次未跑完的 raw CSV（填 experiment result/ 內的檔名即可，或絕對路徑）。
 # 設定後只補跑「缺少或非 OK」的 case，並把上次已完成(OK)的結果一起併進本次新輸出，
 # 得到完整一份。留空 = 從頭跑全部。
+#
+# raw CSV 在「每個 case 結束後」就會原子性重寫一次，所以就算整台機器斷電，
+# 已完成的 case 一定留在檔案裡，不會白跑。中斷後的操作：
+#   1. 到 experiment result/ 找最新的  BBC_ablation_..._raw_YYYYmmdd_HHMMSS.csv
+#   2. 把檔名貼到下面 RESUME_FROM_CSV
+#   3. 重新執行本程式（跑完會另存一份「完整」的新 CSV / Excel）
+# 程式結束時若有未完成的 case，畫面上會直接印出要貼的檔名。
 RESUME_FROM_CSV: str = ""
 
 
@@ -337,11 +376,34 @@ def scaled_instance_generation():
 
 
 def write_results(path: Path, rows: list[dict[str, Any]]) -> None:
+    """原子性寫出 raw CSV（續跑的唯一依據，必須盡最大努力保住）。
+
+    先寫暫存檔再 os.replace；若目標檔被 Excel 鎖住（Windows PermissionError）
+    則重試，仍失敗就另存一份 rescue 檔，確保跑了好幾小時的結果不會遺失。
+    """
     path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w", newline="", encoding="utf-8-sig") as f:
-        writer = csv.DictWriter(f, fieldnames=FIELDNAMES)
-        writer.writeheader()
-        writer.writerows(rows)
+    fd, temp_name = tempfile.mkstemp(prefix=f".{path.stem}_", suffix=".csv", dir=path.parent)
+    os.close(fd)
+    temp_path = Path(temp_name)
+    try:
+        with temp_path.open("w", newline="", encoding="utf-8-sig") as f:
+            writer = csv.DictWriter(f, fieldnames=FIELDNAMES)
+            writer.writeheader()
+            writer.writerows(rows)
+        for attempt in range(EXCEL_REPLACE_RETRIES):
+            try:
+                os.replace(temp_path, path)
+                return
+            except PermissionError:
+                if attempt == 0:
+                    print(f"[csv] 無法寫入 {path.name}（檔案可能正被 Excel 開啟）；重試中 …")
+                time.sleep(EXCEL_REPLACE_RETRY_SLEEP_SEC)
+        rescue = path.with_name(f"{path.stem}.rescue_{int(time.time())}.csv")
+        shutil.copy2(temp_path, rescue)
+        print(f"[csv][WARN] {path.name} 被鎖住無法寫入，已另存 {rescue.name}；"
+              "續跑時請改用這個檔名。")
+    finally:
+        temp_path.unlink(missing_ok=True)
 
 
 def _load_prior_rows(path: Path) -> list[dict[str, Any]]:
@@ -421,11 +483,26 @@ def _write_settings_sheet(wb, run_id: str, log_run_dir: Path | None,
         ("scenario_count", BASE_SCENARIOS),
         ("time_periods", BASE_TIME_PERIODS),
         ("time_limit_s_per_case", TIME_LIMIT),
-        ("mip_gap", MIP_GAP),
+        ("mip_gap (提早結束門檻)", MIP_GAP),
         ("risk_alpha", RISK_ALPHA),
         ("risk_lambda", RISK_LAMBDA),
+        ("box_scope", BOX_SCOPE),
         ("ellipsoidal_scope", ELLIPSOIDAL_SCOPE),
         ("polyhedral_scope", POLYHEDRAL_SCOPE),
+        # ── 規模與資源縮放（config.py plan/15 + 2026-08 台北放大）──
+        ("data_disaster_csv", cfg.DISASTER_CSV),
+        ("data_ccp_csv", cfg.CCP_CSV),
+        ("data_hospital_csv", cfg.HOSPITAL_CSV),
+        ("param_calibration_basis (I/J/H)",
+         f"{cfg.PARAM_CALIB_N_DISASTER}/{cfg.PARAM_CALIB_N_CCP}/{cfg.PARAM_CALIB_N_HOSPITAL}"),
+        ("ccp_upper_bound_scaling", cfg.CCP_UPPER_BOUND_SCALING),
+        ("scale_sampling_mode", cfg.SCALE_SAMPLING_MODE),
+        *[
+            (f"scaling[{sc}] s_D/s_J/s_H",
+             "{demand_scale:.4f} / {ccp_scale:.4f} / {hospital_scale:.4f}".format(
+                 **cfg.resolve_scale(sc)))
+            for sc in SCALES
+        ],
         ("bbc_multi_cut_common", True),
         ("bbc_parallel_oracles_common", int(cfg.BENDERS_PARALLEL_ORACLES)),
         ("bbc_mip_focus_common", DEFAULT_MIPFOCUS),
@@ -495,6 +572,15 @@ def _write_detail_sheet(wb, scale: str, rows: list[dict[str, Any]], fill, font, 
     ws.column_dimensions["W"].width = 10
 
 
+# summary_table 每個 config 下的子欄位。2026-08 依老師要求加入 Objective Value。
+SUMMARY_SUBCOLUMNS = [
+    ("Obj Value", "obj_value"),
+    ("A.Time", "cpu_s"),
+    ("A.Gap(%)", "gap_pct"),
+    ("Nodes", "nodes"),
+]
+
+
 def _write_summary_sheet(wb, rows: list[dict[str, Any]], fill, font, Alignment) -> None:
     """圖片風格彙總分頁：Scale×Model 為列，6 個 config 各一組統計。"""
     from openpyxl.styles import Border, Side
@@ -504,9 +590,10 @@ def _write_summary_sheet(wb, rows: list[dict[str, Any]], fill, font, Alignment) 
     border = Border(left=thin, right=thin, top=thin, bottom=thin)
     ws = wb.create_sheet("summary_table")
 
+    n_sub = len(SUMMARY_SUBCOLUMNS)
     left = ["Scale", "I", "J", "H", "Model"]
     n_left = len(left)
-    n_cols = n_left + len(CONFIGS) * 3
+    n_cols = n_left + len(CONFIGS) * n_sub
 
     n_models = len(MODELS)
     last = 2 + len(SCALES) * n_models
@@ -520,8 +607,8 @@ def _write_summary_sheet(wb, rows: list[dict[str, Any]], fill, font, Alignment) 
     for i in range(1, n_left + 1):
         ws.merge_cells(start_row=1, start_column=i, end_row=2, end_column=i)
     for idx in range(len(CONFIGS)):
-        start = n_left + 1 + idx * 3
-        ws.merge_cells(start_row=1, start_column=start, end_row=1, end_column=start + 2)
+        start = n_left + 1 + idx * n_sub
+        ws.merge_cells(start_row=1, start_column=start, end_row=1, end_column=start + n_sub - 1)
     for block_start, block_end in blocks:
         if block_end > block_start:
             for col in range(1, n_left):  # Scale/I/J/H 跨 model 列合併
@@ -531,10 +618,10 @@ def _write_summary_sheet(wb, rows: list[dict[str, Any]], fill, font, Alignment) 
     for i, title in enumerate(left, 1):
         ws.cell(1, i, title)
     for idx, case in enumerate(CONFIGS):
-        start = n_left + 1 + idx * 3
+        start = n_left + 1 + idx * n_sub
         ws.cell(1, start, case["name"])
-        for offset, sub in enumerate(("A.Time", "A.Gap(%)", "Nodes")):
-            ws.cell(2, start + offset, sub)
+        for offset, (sub_title, _key) in enumerate(SUMMARY_SUBCOLUMNS):
+            ws.cell(2, start + offset, sub_title)
     for k, scale in enumerate(SCALES):
         counts = scale_counts(scale)
         block_start = blocks[k][0]
@@ -553,17 +640,27 @@ def _write_summary_sheet(wb, rows: list[dict[str, Any]], fill, font, Alignment) 
                      and x.get("config") == case["name"]),
                     None,
                 )
-                start = n_left + 1 + idx * 3
+                start = n_left + 1 + idx * n_sub
                 if match is None:
-                    values = ("NA", "NA", "NA")
+                    values = tuple("NA" for _ in SUMMARY_SUBCOLUMNS)
                 elif match.get("status") != "OK":
-                    values = ("FAIL", "FAIL", "FAIL")
+                    values = tuple("FAIL" for _ in SUMMARY_SUBCOLUMNS)
                 else:
-                    values = tuple(excel_value(match, key) for key in ("cpu_s", "gap_pct", "nodes"))
+                    values = tuple(
+                        excel_value(match, key) for _title, key in SUMMARY_SUBCOLUMNS
+                    )
                 for offset, value in enumerate(values):
                     cell = ws.cell(r, start + offset, value)
                     if isinstance(value, float):
-                        cell.number_format = "#,##0.00" if offset < 2 else "#,##0"
+                        key = SUMMARY_SUBCOLUMNS[offset][1]
+                        if key == "obj_value":
+                            cell.number_format = "#,##0.00"
+                        elif key == "gap_pct":
+                            cell.number_format = "0.0000"
+                        elif key == "cpu_s":
+                            cell.number_format = "#,##0.00"
+                        else:
+                            cell.number_format = "#,##0"
 
     # 3) 統一設樣式（merge 之後）：全格框線；表頭列上色。
     for row in ws.iter_rows(min_row=1, max_row=last, min_col=1, max_col=n_cols):
@@ -579,9 +676,11 @@ def _write_summary_sheet(wb, rows: list[dict[str, Any]], fill, font, Alignment) 
     ws.column_dimensions["A"].width = 9
     for col in range(2, 5):
         ws.column_dimensions[get_column_letter(col)].width = 5
-    ws.column_dimensions["E"].width = 9
+    ws.column_dimensions["E"].width = 16
     for col in range(n_left + 1, n_cols + 1):
-        ws.column_dimensions[get_column_letter(col)].width = 10
+        # Obj Value 欄位數字較長，給寬一點
+        is_obj = SUMMARY_SUBCOLUMNS[(col - n_left - 1) % n_sub][1] == "obj_value"
+        ws.column_dimensions[get_column_letter(col)].width = 16 if is_obj else 10
     ws.freeze_panes = f"{get_column_letter(n_left + 1)}3"
     ws.row_dimensions[1].height = 18
     ws.row_dimensions[2].height = 18
@@ -618,14 +717,54 @@ def export_xlsx(rows: list[dict[str, Any]], path: Path, run_id: str = "",
     temp_path = Path(temp_name)
     try:
         wb.save(temp_path)
-        os.replace(temp_path, path)
+        # Windows：若使用者正好在 Excel 開著這個檔，os.replace 會丟
+        # PermissionError。重試幾次給他關檔的機會，而不是直接讓實驗死掉。
+        last_exc: Exception | None = None
+        for attempt in range(EXCEL_REPLACE_RETRIES):
+            try:
+                os.replace(temp_path, path)
+                return path
+            except PermissionError as exc:
+                last_exc = exc
+                if attempt == 0:
+                    print(f"[excel] 無法寫入 {path.name}（檔案可能正被 Excel 開啟）；"
+                          f"重試中，請關閉該檔案 …")
+                time.sleep(EXCEL_REPLACE_RETRY_SLEEP_SEC)
+        raise PermissionError(
+            f"無法寫入 {path}（重試 {EXCEL_REPLACE_RETRIES} 次仍失敗）。"
+            "請關閉正在開啟該檔案的 Excel 視窗。"
+        ) from last_exc
     finally:
         temp_path.unlink(missing_ok=True)
-    return path
+
+
+def export_xlsx_incremental(rows: list[dict[str, Any]], path: Path, run_id: str,
+                            log_run_dir: Path | None) -> None:
+    """跑實驗途中的即時匯出：失敗只警告，不中斷整批實驗。
+
+    續跑的依據是 raw CSV（`write_results` 已先寫好），Excel 只是方便中途查看，
+    所以途中匯出失敗（例如檔案被 Excel 鎖住）不該讓跑了好幾小時的實驗掛掉。
+    最終匯出（main 結尾）仍會正常拋出錯誤。
+    """
+    try:
+        export_xlsx(rows, path, run_id, log_run_dir)
+    except Exception as exc:  # noqa: BLE001
+        print(f"[excel][WARN] 中途匯出失敗，實驗繼續進行（結果已存在 CSV）："
+              f"{type(exc).__name__}: {exc}")
 
 
 def _safe_case_name(value: str) -> str:
     return re.sub(r"[^A-Za-z0-9_.-]+", "_", value).strip("._") or "case"
+
+
+def hard_timeout_for(case: dict[str, Any]) -> float:
+    """該 case 的子程序硬超時（秒）= 求解時限 + 依引擎而定的建模緩衝。"""
+    buffer_s = (
+        HARD_TIMEOUT_BUFFER_SEC_EXTENSIVE
+        if case.get("engine") == "extensive"
+        else HARD_TIMEOUT_BUFFER_SEC
+    )
+    return TIME_LIMIT + buffer_s
 
 
 def _case_paths(scale: str, model_name: str, case: dict[str, Any],
@@ -866,11 +1005,12 @@ def run_one_case_subprocess(model_name: str, case: dict[str, Any],
     ]
     timed_out = False
     return_code = None
+    hard_timeout = hard_timeout_for(case)
     with launcher_path.open("w", encoding="utf-8", newline="") as launcher:
         try:
             completed = subprocess.run(
                 cmd, cwd=ROOT_DIR, stdout=launcher, stderr=subprocess.STDOUT,
-                timeout=TIME_LIMIT + HARD_TIMEOUT_BUFFER_SEC, check=False,
+                timeout=hard_timeout, check=False,
             )
             return_code = completed.returncode
         except subprocess.TimeoutExpired:
@@ -890,9 +1030,13 @@ def run_one_case_subprocess(model_name: str, case: dict[str, Any],
             return row
 
         if timed_out:
-            note = f"Hard timeout: case process exceeded {TIME_LIMIT + HARD_TIMEOUT_BUFFER_SEC:.0f} seconds"
+            note = f"Hard timeout: case process exceeded {hard_timeout:.0f} seconds"
         else:
+            # 常見原因：記憶體不足被作業系統終止（Extensive form 在大規模
+            # 可能需要數十 GB）。此時 returncode 為負值或 137。
             note = f"Case subprocess failed with exit code {return_code}"
+            if return_code in (137, -9):
+                note += "（很可能是記憶體不足被系統終止；Extensive form 在大規模需要大量 RAM）"
 
         launcher_tail = ""
         if launcher_path.is_file():
@@ -1026,14 +1170,31 @@ def main() -> None:
     print("=" * 72)
     print("B&BC ABLATION EXPERIMENT (實驗三) — small / medium / large")
     print("=" * 72)
-    print(f"scales={SCALES}")
+    print(f"data  : {cfg.DISASTER_CSV} / {cfg.CCP_CSV} / {cfg.HOSPITAL_CSV}")
+    print(f"scales={SCALES}  (資源縮放基準 I/J/H = "
+          f"{cfg.PARAM_CALIB_N_DISASTER}/{cfg.PARAM_CALIB_N_CCP}/{cfg.PARAM_CALIB_N_HOSPITAL}, "
+          f"per-CCP 模式 = {cfg.CCP_UPPER_BOUND_SCALING})")
     for sc in SCALES:
         c = scale_counts(sc)
-        print(f"  {sc:6}: I={c['I']} J={c['J']} H={c['H']}")
+        rs = cfg.resolve_scale(sc)
+        print(f"  {sc:6}: I={c['I']:3d} J={c['J']:3d} H={c['H']:3d}  "
+              f"s_D={rs['demand_scale']:.3f} s_J={rs['ccp_scale']:.3f} "
+              f"s_H={rs['hospital_scale']:.3f}")
     print(f"configs={[case['name'] for case in active_configs()]}")
     print(f"models={MODELS} S={BASE_SCENARIOS} T={BASE_TIME_PERIODS}")
-    print(f"mip_gap={MIP_GAP} time_limit={TIME_LIMIT} "
-          f"cases={len(SCALES) * len(active_configs()) * len(MODELS)}")
+    n_cases = len(SCALES) * len(active_configs()) * len(MODELS)
+    print(f"mip_gap={MIP_GAP} (達到即提早結束) time_limit={TIME_LIMIT}s "
+          f"cases={n_cases}")
+    n_ext = len(SCALES) * len(MODELS) * sum(
+        1 for c in active_configs() if c.get("engine") == "extensive"
+    )
+    worst_h = (
+        (n_cases - n_ext) * hard_timeout_for({}) + n_ext * hard_timeout_for({"engine": "extensive"})
+    ) / 3600.0
+    print(f"最壞情況總時間 ≈ {worst_h:.0f} 小時"
+          f"（實際會因為 gap≤{MIP_GAP:.0%} 提早結束而少很多）")
+    print(f"硬超時：B&BC 類 {hard_timeout_for({}) / 60:.0f} 分鐘/case、"
+          f"Extensive {hard_timeout_for({'engine': 'extensive'}) / 60:.0f} 分鐘/case")
     print(f"CSV   : {csv_path}\nExcel : {xlsx_path}\nLogs  : {log_run_dir}")
 
     prior_ok: dict[str, dict[str, Any]] = {}
@@ -1051,30 +1212,44 @@ def main() -> None:
     total = len(SCALES) * len(active_configs()) * len(MODELS)
 
     run_idx = 0
-    for scale in SCALES:
-        counts = scale_counts(scale)
-        for model_name in MODELS:
-            for case in active_configs():
-                run_idx += 1
-                test_id = f"{scale}_{model_name}_{case['name']}".replace("+", "_plus_")
-                if test_id in prior_ok:
-                    print(f"[{run_idx}/{total}] SKIP（沿用上次已完成）{test_id}")
-                    rows.append(prior_ok[test_id])
-                else:
-                    print(
-                        f"\n[{run_idx}/{total}] scale={scale} "
-                        f"model={model_name} config={case['name']}"
-                    )
-                    row = run_one_case_subprocess(
-                        model_name, case, counts, scale, run_idx, total, log_run_dir,
-                    )
-                    rows.append(row)
-                    print(
-                        f"  -> {row['status']} obj={row['obj_value']} "
-                        f"time={row['cpu_s']}s gap={row['gap_pct']}%"
-                    )
-                write_results(csv_path, rows)
-                export_xlsx(rows, xlsx_path, timestamp, log_run_dir)
+    try:
+        for scale in SCALES:
+            counts = scale_counts(scale)
+            for model_name in MODELS:
+                for case in active_configs():
+                    run_idx += 1
+                    test_id = f"{scale}_{model_name}_{case['name']}".replace("+", "_plus_")
+                    if test_id in prior_ok:
+                        print(f"[{run_idx}/{total}] SKIP（沿用上次已完成）{test_id}")
+                        rows.append(prior_ok[test_id])
+                    else:
+                        print(
+                            f"\n[{run_idx}/{total}] scale={scale} "
+                            f"model={model_name} config={case['name']}"
+                        )
+                        row = run_one_case_subprocess(
+                            model_name, case, counts, scale, run_idx, total, log_run_dir,
+                        )
+                        rows.append(row)
+                        print(
+                            f"  -> {row['status']} obj={row['obj_value']} "
+                            f"time={row['cpu_s']}s gap={row['gap_pct']}%"
+                        )
+                    # 每個 case 結束就落地一次；中斷後可由此 CSV 續跑。
+                    write_results(csv_path, rows)
+                    export_xlsx_incremental(rows, xlsx_path, timestamp, log_run_dir)
+    except KeyboardInterrupt:
+        # 使用者中斷：已完成的 case 已經寫進 csv_path，直接告訴他怎麼續跑。
+        write_results(csv_path, rows)
+        export_xlsx_incremental(rows, xlsx_path, timestamp, log_run_dir)
+        print("\n" + "=" * 72)
+        print("[INTERRUPTED] 已中斷。已完成的結果都已保存。")
+        print(f"  已完成 OK: {sum(r['status'] == 'OK' for r in rows)}/{total}")
+        print(f"  CSV      : {csv_path}")
+        print("\n續跑方式：把下面這行貼回本檔的參數區，再執行一次。")
+        print(f'    RESUME_FROM_CSV = "{csv_path.name}"')
+        print("=" * 72)
+        return
 
     warnings = objective_warnings(rows)
     export_xlsx(rows, xlsx_path, timestamp, log_run_dir)
@@ -1083,10 +1258,16 @@ def main() -> None:
     except Exception as _exc:  # noqa: BLE001  # resume/部分重跑時沿用列的舊 log 可能不在，容忍
         print(f"[validate] 略過完整性檢查（resume 或部分重跑）: {_exc}")
     print("\n" + "=" * 72)
-    print(f"Done: {sum(r['status'] == 'OK' for r in rows)}/{len(rows)} cases OK")
+    n_ok = sum(r["status"] == "OK" for r in rows)
+    print(f"Done: {n_ok}/{len(rows)} cases OK")
     for warning in warnings:
         print(f"[WARN] {warning}")
     print(f"CSV   : {csv_path}\nExcel : {xlsx_path}\nLogs  : {log_run_dir}")
+    if n_ok < len(expected_test_ids()):
+        print("\n" + "-" * 72)
+        print("尚有 case 未完成。續跑方式：把下面這行貼回本檔的參數區，再執行一次。")
+        print(f'    RESUME_FROM_CSV = "{csv_path.name}"')
+        print("-" * 72)
 
 
 if __name__ == "__main__":

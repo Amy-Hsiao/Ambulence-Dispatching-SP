@@ -696,9 +696,18 @@ def generate_data(
             else full_n_ccp
         )
     if _n_ccp < full_n_ccp:
-        ccp_rng     = random.Random(stable_seed(MASTER_SEED, "ccp_selection", _n_ccp))
-        sampled_ccp = ccp_rng.sample(all_ccp_records, _n_ccp)
-        ccp_id_set  = {r.id for r in sampled_ccp}
+        if SCALE_SAMPLING_MODE == "nested":
+            # 巢狀抽樣：固定 seed 洗牌一次後取前綴，使
+            # J=20 ⊂ J=30 ⊂ J=40 ⊂ J=50（與災區 / 醫院的作法一致）。
+            # 這樣掃描 |J| 時，小的候選集合是大的子集合，最佳值隨 |J| 單調
+            # 不增，求解難度的差異才能純粹歸因於候選點數量。
+            ccp_order = list(all_ccp_records)
+            random.Random(stable_seed(MASTER_SEED, "scale_nested", "ccp")).shuffle(ccp_order)
+            ccp_id_set  = {r.id for r in ccp_order[:_n_ccp]}
+        else:
+            ccp_rng     = random.Random(stable_seed(MASTER_SEED, "ccp_selection", _n_ccp))
+            sampled_ccp = ccp_rng.sample(all_ccp_records, _n_ccp)
+            ccp_id_set  = {r.id for r in sampled_ccp}
         ccp_records = [r for r in all_ccp_records if r.id in ccp_id_set]
     else:
         ccp_records = all_ccp_records

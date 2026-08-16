@@ -1,0 +1,623 @@
+Log file: C:\Users\User\Desktop\救護車派遣\006\logs\MCVAR_BBC_seed42_scen30_used30_period8_sample1p0_D1p0_R1p0_H1p0_tl7200p0_gap0p01_a0p9_l0p5.log
+==================================================
+RUN METADATA
+==================================================
+- model_type: MCVAR-BBC (mean-CVaR, multi-cut Branch-and-Benders-Cut)
+- scenario_size_used: 30
+- time_limit: 7200.0
+- mip_gap: 0.01
+- risk_alpha: 0.9
+- risk_lambda: 0.5
+- multi_cut: True
+- root_seed_iters: 300
+- root_cut_rounds: 0
+- use_user_cuts: False
+- ev_warm_start: True
+- pareto_enabled: False
+- master_seed: 42
+- num_scenarios_config: 30
+- num_periods: 8
+- sample_ratio: None
+- sampled_disaster_areas: 70
+- sampled_ccps: 50
+- sampled_hospitals: 18
+- demand_multiplier: 1.0
+- road_capacity_multiplier: 1.0
+- hospital_capacity_multiplier: 1.0
+==================================================
+==================================================
+
+Optimizing SP+MCVaR Model (alpha=0.9, lambda=0.5) — B&BC engine...
+
+Set parameter WLSAccessID
+Set parameter WLSSecret
+Set parameter LicenseID to value 2840773
+Academic license 2840773 - for non-commercial use only - registered to ss___@gapp.nthu.edu.tw
+[B&BC] EV warm start UB: 58735339.13
+======================================================================
+B&BC ROOT SEEDING (standard cuts, max 300 LP iterations, stop after 10 rounds with LB improvement < 0.0500%)
+======================================================================
+[root seed 1] LB=0.00 cuts=30 total_seed_cuts=30
+[root seed 2] LB=537568.10 cuts=30 total_seed_cuts=60
+[root seed 3] LB=1462448.66 cuts=30 total_seed_cuts=90
+[root seed 4] LB=1788613.53 cuts=30 total_seed_cuts=120
+[root seed 5] LB=2141743.35 cuts=30 total_seed_cuts=150
+[root seed 6] LB=2718290.31 cuts=30 total_seed_cuts=180
+[root seed 7] LB=3291703.14 cuts=30 total_seed_cuts=210
+[root seed 8] LB=3944854.84 cuts=30 total_seed_cuts=240
+[root seed 9] LB=4251577.38 cuts=30 total_seed_cuts=270
+[root seed 10] LB=4652611.69 cuts=30 total_seed_cuts=300
+[root seed 11] LB=4877765.24 cuts=30 total_seed_cuts=330
+[root seed 12] LB=5334995.36 cuts=30 total_seed_cuts=360
+[root seed 13] LB=5626438.28 cuts=30 total_seed_cuts=390
+[root seed 14] LB=5796511.23 cuts=30 total_seed_cuts=420
+[root seed 15] LB=6060693.14 cuts=30 total_seed_cuts=450
+[root seed 16] LB=6240121.89 cuts=30 total_seed_cuts=480
+[root seed 17] LB=6585499.63 cuts=30 total_seed_cuts=510
+[root seed 18] LB=6816508.62 cuts=30 total_seed_cuts=540
+[root seed 19] LB=7057612.95 cuts=30 total_seed_cuts=570
+[root seed 20] LB=7269184.95 cuts=30 total_seed_cuts=600
+[root seed 21] LB=7362429.39 cuts=30 total_seed_cuts=630
+[root seed 22] LB=7501555.64 cuts=30 total_seed_cuts=660
+[root seed 23] LB=7616105.04 cuts=30 total_seed_cuts=690
+[root seed 24] LB=7707451.55 cuts=30 total_seed_cuts=720
+[root seed 25] LB=7769339.13 cuts=30 total_seed_cuts=750
+[root seed 26] LB=7814722.17 cuts=30 total_seed_cuts=780
+[root seed 27] LB=7841748.44 cuts=30 total_seed_cuts=810
+[root seed 28] LB=7928816.22 cuts=30 total_seed_cuts=840
+[root seed 29] LB=7968105.62 cuts=30 total_seed_cuts=870
+[root seed 30] LB=8026474.42 cuts=30 total_seed_cuts=900
+[root seed 31] LB=8050810.39 cuts=30 total_seed_cuts=930
+[root seed 32] LB=8086885.53 cuts=30 total_seed_cuts=960
+[root seed 33] LB=8122853.05 cuts=30 total_seed_cuts=990
+[root seed 34] LB=8147465.14 cuts=30 total_seed_cuts=1020
+[root seed 35] LB=8213511.76 cuts=30 total_seed_cuts=1050
+[root seed 36] LB=8280114.45 cuts=30 total_seed_cuts=1080
+[root seed 37] LB=8389262.62 cuts=30 total_seed_cuts=1110
+[root seed 38] LB=8473209.57 cuts=30 total_seed_cuts=1140
+[root seed 39] LB=8533157.21 cuts=30 total_seed_cuts=1170
+[root seed 40] LB=8585990.59 cuts=30 total_seed_cuts=1200
+[root seed 41] LB=8621581.08 cuts=30 total_seed_cuts=1230
+[root seed 42] LB=8697454.29 cuts=30 total_seed_cuts=1260
+[root seed 43] LB=8751789.80 cuts=30 total_seed_cuts=1290
+[root seed 44] LB=8786919.57 cuts=30 total_seed_cuts=1320
+[root seed 45] LB=8832873.65 cuts=30 total_seed_cuts=1350
+[root seed 46] LB=8853854.16 cuts=30 total_seed_cuts=1380
+[root seed 47] LB=8887568.75 cuts=30 total_seed_cuts=1410
+[root seed 48] LB=8911603.41 cuts=30 total_seed_cuts=1440
+[root seed 49] LB=8943255.74 cuts=30 total_seed_cuts=1470
+[root seed 50] LB=8978376.50 cuts=30 total_seed_cuts=1500
+[root seed 51] LB=9004523.74 cuts=30 total_seed_cuts=1530
+[root seed 52] LB=9044544.49 cuts=30 total_seed_cuts=1560
+[root seed 53] LB=9077705.95 cuts=30 total_seed_cuts=1590
+[root seed 54] LB=9130003.52 cuts=30 total_seed_cuts=1620
+[root seed 55] LB=9159892.40 cuts=30 total_seed_cuts=1650
+[root seed 56] LB=9196130.32 cuts=30 total_seed_cuts=1680
+[root seed 57] LB=9220025.57 cuts=30 total_seed_cuts=1710
+[root seed 58] LB=9233248.15 cuts=30 total_seed_cuts=1740
+[root seed 59] LB=9241868.27 cuts=30 total_seed_cuts=1770
+[root seed 60] LB=9259641.80 cuts=30 total_seed_cuts=1800
+[root seed 61] LB=9270136.48 cuts=30 total_seed_cuts=1830
+[root seed 62] LB=9282910.01 cuts=30 total_seed_cuts=1860
+[root seed 63] LB=9297312.44 cuts=30 total_seed_cuts=1890
+[root seed 64] LB=9309964.50 cuts=30 total_seed_cuts=1920
+[root seed 65] LB=9323298.00 cuts=30 total_seed_cuts=1950
+[root seed 66] LB=9338792.68 cuts=30 total_seed_cuts=1980
+[root seed 67] LB=9348853.48 cuts=30 total_seed_cuts=2010
+[root seed 68] LB=9366419.30 cuts=30 total_seed_cuts=2040
+[root seed 69] LB=9379729.61 cuts=30 total_seed_cuts=2070
+[root seed 70] LB=9391715.88 cuts=30 total_seed_cuts=2100
+[root seed 71] LB=9412334.60 cuts=30 total_seed_cuts=2130
+[root seed 72] LB=9423471.43 cuts=30 total_seed_cuts=2160
+[root seed 73] LB=9432484.46 cuts=30 total_seed_cuts=2190
+[root seed 74] LB=9442096.28 cuts=30 total_seed_cuts=2220
+[root seed 75] LB=9452265.45 cuts=30 total_seed_cuts=2250
+[root seed 76] LB=9468014.73 cuts=30 total_seed_cuts=2280
+[root seed 77] LB=9484303.36 cuts=30 total_seed_cuts=2310
+[root seed 78] LB=9495913.02 cuts=30 total_seed_cuts=2340
+[root seed 79] LB=9501688.08 cuts=30 total_seed_cuts=2370
+[root seed 80] LB=9504161.34 cuts=30 total_seed_cuts=2400
+[root seed 81] LB=9520700.71 cuts=30 total_seed_cuts=2430
+[root seed 82] LB=9530559.92 cuts=30 total_seed_cuts=2460
+[root seed 83] LB=9539311.14 cuts=30 total_seed_cuts=2490
+[root seed 84] LB=9555498.79 cuts=30 total_seed_cuts=2520
+[root seed 85] LB=9576528.80 cuts=30 total_seed_cuts=2550
+[root seed 86] LB=9585807.82 cuts=30 total_seed_cuts=2580
+[root seed 87] LB=9594740.14 cuts=30 total_seed_cuts=2610
+[root seed 88] LB=9601834.72 cuts=30 total_seed_cuts=2640
+[root seed 89] LB=9611557.82 cuts=30 total_seed_cuts=2670
+[root seed 90] LB=9624428.84 cuts=30 total_seed_cuts=2700
+[root seed 91] LB=9631562.84 cuts=30 total_seed_cuts=2730
+[root seed 92] LB=9640583.98 cuts=30 total_seed_cuts=2760
+[root seed 93] LB=9643872.24 cuts=30 total_seed_cuts=2790
+[root seed 94] LB=9652463.17 cuts=30 total_seed_cuts=2820
+[root seed 95] LB=9664467.20 cuts=30 total_seed_cuts=2850
+[root seed 96] LB=9669759.61 cuts=30 total_seed_cuts=2880
+[root seed 97] LB=9676250.04 cuts=30 total_seed_cuts=2910
+[root seed 98] LB=9681150.17 cuts=30 total_seed_cuts=2940
+[root seed 99] LB=9685395.14 cuts=30 total_seed_cuts=2970
+[root seed 100] LB=9688150.35 cuts=30 total_seed_cuts=3000
+[root seed 101] LB=9692696.17 cuts=30 total_seed_cuts=3030
+[root seed 102] LB=9697884.84 cuts=30 total_seed_cuts=3060
+[root seed 103] LB=9701569.34 cuts=30 total_seed_cuts=3090
+[root seed 104] LB=9705904.11 cuts=30 total_seed_cuts=3120
+[root seed 105] LB=9709662.72 cuts=30 total_seed_cuts=3150
+[root seed 106] LB=9714167.63 cuts=30 total_seed_cuts=3180
+[root seed 107] LB=9715830.12 cuts=30 total_seed_cuts=3210
+[root seed 108] LB=9720438.53 cuts=30 total_seed_cuts=3240
+[root seed 109] LB=9724268.00 cuts=30 total_seed_cuts=3270
+[root seed 110] LB=9729672.28 cuts=30 total_seed_cuts=3300
+[root seed 111] LB=9734557.28 cuts=30 total_seed_cuts=3330
+[root seed 112] LB=9741191.50 cuts=30 total_seed_cuts=3360
+[root seed 113] LB=9750442.35 cuts=30 total_seed_cuts=3390
+[root seed 114] LB=9766509.91 cuts=30 total_seed_cuts=3420
+[root seed 115] LB=9779926.43 cuts=30 total_seed_cuts=3450
+[root seed 116] LB=9789764.40 cuts=30 total_seed_cuts=3480
+[root seed 117] LB=9797527.18 cuts=30 total_seed_cuts=3510
+[root seed 118] LB=9807015.72 cuts=30 total_seed_cuts=3540
+[root seed 119] LB=9814622.53 cuts=30 total_seed_cuts=3570
+[root seed 120] LB=9829761.08 cuts=30 total_seed_cuts=3600
+[root seed 121] LB=9837659.72 cuts=30 total_seed_cuts=3630
+[root seed 122] LB=9845587.12 cuts=30 total_seed_cuts=3660
+[root seed 123] LB=9853337.21 cuts=30 total_seed_cuts=3690
+[root seed 124] LB=9864930.40 cuts=30 total_seed_cuts=3720
+[root seed 125] LB=9874810.32 cuts=30 total_seed_cuts=3750
+[root seed 126] LB=9883556.08 cuts=30 total_seed_cuts=3780
+[root seed 127] LB=9889734.00 cuts=30 total_seed_cuts=3810
+[root seed 128] LB=9895466.26 cuts=30 total_seed_cuts=3840
+[root seed 129] LB=9905151.20 cuts=30 total_seed_cuts=3870
+[root seed 130] LB=9913206.48 cuts=30 total_seed_cuts=3900
+[root seed 131] LB=9919160.23 cuts=30 total_seed_cuts=3930
+[root seed 132] LB=9928967.37 cuts=30 total_seed_cuts=3960
+[root seed 133] LB=9944329.40 cuts=30 total_seed_cuts=3990
+[root seed 134] LB=9947847.15 cuts=30 total_seed_cuts=4020
+[root seed 135] LB=9954045.06 cuts=30 total_seed_cuts=4050
+[root seed 136] LB=9961801.75 cuts=30 total_seed_cuts=4080
+[root seed 137] LB=9967995.15 cuts=30 total_seed_cuts=4110
+[root seed 138] LB=9972618.78 cuts=30 total_seed_cuts=4140
+[root seed 139] LB=9978198.97 cuts=30 total_seed_cuts=4170
+[root seed 140] LB=9983028.51 cuts=30 total_seed_cuts=4200
+[root seed 141] LB=9989066.84 cuts=30 total_seed_cuts=4230
+[root seed 142] LB=9994932.30 cuts=30 total_seed_cuts=4260
+[root seed 143] LB=9998505.52 cuts=30 total_seed_cuts=4290
+[root seed 144] LB=10001021.14 cuts=30 total_seed_cuts=4320
+[root seed 145] LB=10004424.39 cuts=30 total_seed_cuts=4350
+[root seed 146] LB=10007285.45 cuts=30 total_seed_cuts=4380
+[root seed 147] LB=10010124.72 cuts=30 total_seed_cuts=4410
+[root seed 148] LB=10013096.50 cuts=30 total_seed_cuts=4440
+[root seed 149] LB=10017664.89 cuts=30 total_seed_cuts=4470
+[root seed 150] LB=10021372.62 cuts=30 total_seed_cuts=4500
+[root seed 151] LB=10025915.55 cuts=30 total_seed_cuts=4530
+[root seed stop] seeded_LB=10029724.54 prev_LB=10025915.55 rel_improve=0.0380% stall_rounds=10/10
+[root seed done] seeded_LB=10029724.54 reason=lb_rel_improve_below_0.000500_for_10_rounds iters=151/300 seed_cuts=4530 time=366.56s
+======================================================================
+BRANCH-AND-BENDERS-CUT
+LP root seeding: 151/300 rounds
+Parallel oracle workers: 5
+======================================================================
+[BBC t=576.8s] UB=58735339.13 LB=10029724.54 gap=82.92%
+[BBC t=613.6s] UB=58735339.13 LB=10029724.54 gap=82.92%
+[BBC t=630.8s] UB=58735339.13 LB=10029724.54 gap=82.92%
+[BBC t=644.4s] UB=58735339.13 LB=10029724.54 gap=82.92%
+[BBC t=656.0s] UB=58735339.13 LB=10029724.54 gap=82.92%
+[BBC t=674.0s] UB=58735339.13 LB=10029724.54 gap=82.92%
+[BBC t=696.7s] UB=58735339.13 LB=10052775.73 gap=82.88%
+[BBC t=707.8s] UB=58735339.13 LB=10052775.73 gap=82.88%
+[BBC t=723.8s] UB=58735339.13 LB=10055164.07 gap=82.88%
+[BBC t=735.0s] UB=58735339.13 LB=10055383.86 gap=82.88%
+[BBC t=749.4s] UB=58735339.13 LB=10089339.27 gap=82.82%
+[BBC t=760.6s] UB=58735339.13 LB=10093613.81 gap=82.82%
+[BBC t=770.8s] UB=58735339.13 LB=10128141.64 gap=82.76%
+[BBC t=793.0s] UB=58735339.13 LB=10132687.36 gap=82.75%
+[BBC t=830.1s] UB=58735339.13 LB=10135772.75 gap=82.74%
+[BBC t=854.4s] UB=58735339.13 LB=10157682.77 gap=82.71%
+[BBC t=872.0s] UB=58735339.13 LB=10162352.48 gap=82.70%
+[BBC t=890.5s] UB=58735339.13 LB=10163817.79 gap=82.70%
+[BBC t=901.5s] UB=58735339.13 LB=10178558.91 gap=82.67%
+[BBC t=919.9s] UB=58735339.13 LB=10186777.07 gap=82.66%
+[BBC t=930.8s] UB=58735339.13 LB=10194499.06 gap=82.64%
+[BBC t=941.8s] UB=58735339.13 LB=10200777.66 gap=82.63%
+[BBC t=952.0s] UB=58735339.13 LB=10202407.91 gap=82.63%
+[BBC t=963.8s] UB=58735339.13 LB=10219583.56 gap=82.60%
+[BBC t=973.9s] UB=58735339.13 LB=10223691.18 gap=82.59%
+[BBC t=984.7s] UB=58735339.13 LB=10231513.14 gap=82.58%
+[BBC t=996.5s] UB=58735339.13 LB=10233741.39 gap=82.58%
+[BBC t=1009.4s] UB=58735339.13 LB=10247560.36 gap=82.55%
+[BBC t=1020.9s] UB=58735339.13 LB=10250999.49 gap=82.55%
+[BBC t=1033.9s] UB=58735339.13 LB=10255209.38 gap=82.54%
+[BBC t=1045.0s] UB=58735339.13 LB=10256308.03 gap=82.54%
+[BBC t=1057.8s] UB=58735339.13 LB=10258017.50 gap=82.54%
+[BBC t=1067.8s] UB=58735339.13 LB=10262876.58 gap=82.53%
+[BBC t=1083.3s] UB=52742485.17 LB=10262876.58 gap=80.54%
+[BBC t=1227.2s] UB=51112185.02 LB=10262876.58 gap=79.92%
+[BBC t=1241.3s] UB=51112185.02 LB=10262876.58 gap=79.92%
+[BBC t=1257.5s] UB=51112185.02 LB=10262876.58 gap=79.92%
+[BBC t=1268.4s] UB=51112185.02 LB=10262876.58 gap=79.92%
+[BBC t=1286.6s] UB=51112185.02 LB=10262876.58 gap=79.92%
+[BBC t=1298.6s] UB=51112185.02 LB=10262876.58 gap=79.92%
+[BBC t=1310.8s] UB=51112185.02 LB=10262876.58 gap=79.92%
+[BBC t=1327.6s] UB=51112185.02 LB=10262876.58 gap=79.92%
+[BBC t=1337.9s] UB=51112185.02 LB=10262876.58 gap=79.92%
+[BBC t=1351.1s] UB=51112185.02 LB=10262876.58 gap=79.92%
+[BBC t=1366.4s] UB=51112185.02 LB=10262876.58 gap=79.92%
+[BBC t=1380.0s] UB=51112185.02 LB=10262876.58 gap=79.92%
+[BBC t=1390.7s] UB=51112185.02 LB=10262876.58 gap=79.92%
+[BBC t=1406.0s] UB=51112185.02 LB=10262876.58 gap=79.92%
+[BBC t=1418.5s] UB=51112185.02 LB=10262876.58 gap=79.92%
+[BBC t=1430.6s] UB=51112185.02 LB=10262876.58 gap=79.92%
+[BBC t=1471.3s] UB=51112185.02 LB=10262876.58 gap=79.92%
+[BBC t=1492.8s] UB=51112185.02 LB=10262876.58 gap=79.92%
+[BBC t=1507.2s] UB=51112185.02 LB=10262876.58 gap=79.92%
+[BBC t=1545.3s] UB=51112185.02 LB=10262876.58 gap=79.92%
+[BBC t=1566.3s] UB=51112185.02 LB=10262876.58 gap=79.92%
+[BBC t=1576.6s] UB=51112185.02 LB=10262876.58 gap=79.92%
+[BBC t=1629.8s] UB=51112185.02 LB=10262876.58 gap=79.92%
+[BBC t=1678.5s] UB=51112185.02 LB=10288391.66 gap=79.87%
+[BBC t=1713.6s] UB=51112185.02 LB=10288604.41 gap=79.87%
+[BBC t=1746.2s] UB=51112185.02 LB=10310357.50 gap=79.83%
+[BBC t=1766.0s] UB=51112185.02 LB=10310668.82 gap=79.83%
+[BBC t=1810.9s] UB=51112185.02 LB=10322446.43 gap=79.80%
+[BBC t=1846.5s] UB=51112185.02 LB=10349919.89 gap=79.75%
+[BBC t=1858.8s] UB=51112185.02 LB=10359323.46 gap=79.73%
+[BBC t=1872.7s] UB=51112185.02 LB=10367738.83 gap=79.72%
+[BBC t=1884.2s] UB=51112185.02 LB=10376037.71 gap=79.70%
+[BBC t=1895.4s] UB=51112185.02 LB=10379355.66 gap=79.69%
+[BBC t=1937.1s] UB=51112185.02 LB=10404261.28 gap=79.64%
+[BBC t=1954.3s] UB=51112185.02 LB=10413152.75 gap=79.63%
+[BBC t=2011.0s] UB=51112185.02 LB=10417053.21 gap=79.62%
+[BBC t=2047.5s] UB=51112185.02 LB=10422673.48 gap=79.61%
+[BBC t=2058.0s] UB=51112185.02 LB=10423763.57 gap=79.61%
+[BBC t=2070.2s] UB=51112185.02 LB=10428471.13 gap=79.60%
+[BBC t=2103.1s] UB=51112185.02 LB=10435039.14 gap=79.58%
+[BBC t=2162.2s] UB=51112185.02 LB=10440704.48 gap=79.57%
+[BBC t=2187.8s] UB=51112185.02 LB=10440831.40 gap=79.57%
+[BBC t=2201.2s] UB=51112185.02 LB=10442749.86 gap=79.57%
+[BBC t=2212.5s] UB=51112185.02 LB=10449562.99 gap=79.56%
+[BBC t=2227.0s] UB=51112185.02 LB=10455552.55 gap=79.54%
+[BBC t=2237.8s] UB=51112185.02 LB=10459531.52 gap=79.54%
+[BBC t=2250.0s] UB=51112185.02 LB=10460458.18 gap=79.53%
+[BBC t=2261.4s] UB=51112185.02 LB=10464146.84 gap=79.53%
+[BBC t=2274.2s] UB=51112185.02 LB=10468093.01 gap=79.52%
+[BBC t=2293.0s] UB=51112185.02 LB=10470130.02 gap=79.52%
+[BBC t=2307.1s] UB=51112185.02 LB=10486275.83 gap=79.48%
+[BBC t=2317.6s] UB=51112185.02 LB=10495395.58 gap=79.47%
+[BBC t=2330.2s] UB=51112185.02 LB=10506630.10 gap=79.44%
+[BBC t=2344.3s] UB=51112185.02 LB=10509737.74 gap=79.44%
+[BBC t=2354.4s] UB=51112185.02 LB=10533088.78 gap=79.39%
+[BBC t=2367.4s] UB=51112185.02 LB=10544810.72 gap=79.37%
+[BBC t=2377.8s] UB=51112185.02 LB=10546516.20 gap=79.37%
+[BBC t=2390.8s] UB=51112185.02 LB=10549604.57 gap=79.36%
+[BBC t=2404.3s] UB=49768722.72 LB=10551318.25 gap=78.80%
+[BBC t=2415.4s] UB=49768722.72 LB=10566566.31 gap=78.77%
+[BBC t=2426.0s] UB=49768722.72 LB=10596089.01 gap=78.71%
+[BBC t=2436.4s] UB=49768722.72 LB=10615538.20 gap=78.67%
+[BBC t=2446.7s] UB=49768722.72 LB=10635356.20 gap=78.63%
+[BBC t=2457.3s] UB=49768722.72 LB=10652500.76 gap=78.60%
+[BBC t=2469.8s] UB=46061213.35 LB=10662596.65 gap=76.85%
+[BBC t=2484.1s] UB=46061213.35 LB=10673459.77 gap=76.83%
+[BBC t=2495.9s] UB=46061213.35 LB=10685620.43 gap=76.80%
+[BBC t=2508.3s] UB=46061213.35 LB=10689129.17 gap=76.79%
+[BBC t=2519.1s] UB=46061213.35 LB=10695246.47 gap=76.78%
+[BBC t=2529.7s] UB=46061213.35 LB=10699807.82 gap=76.77%
+[BBC t=2541.3s] UB=46061213.35 LB=10701001.73 gap=76.77%
+[BBC t=2555.6s] UB=46061213.35 LB=10701756.99 gap=76.77%
+[BBC t=2567.0s] UB=36066111.06 LB=10704123.88 gap=70.32%
+[BBC t=2578.4s] UB=36066111.06 LB=10706771.34 gap=70.31%
+[BBC t=2588.8s] UB=36066111.06 LB=10708142.46 gap=70.31%
+[BBC t=2604.5s] UB=36066111.06 LB=10717553.22 gap=70.28%
+[BBC t=2615.4s] UB=36066111.06 LB=10719828.07 gap=70.28%
+[BBC t=2631.2s] UB=36066111.06 LB=10722544.91 gap=70.27%
+[BBC t=2645.5s] UB=36066111.06 LB=10737750.10 gap=70.23%
+[BBC t=2660.0s] UB=36066111.06 LB=10743674.50 gap=70.21%
+[BBC t=2674.8s] UB=35859381.13 LB=10748906.06 gap=70.02%
+[BBC t=2688.5s] UB=35859381.13 LB=10751967.38 gap=70.02%
+[BBC t=2700.9s] UB=35859381.13 LB=10753971.70 gap=70.01%
+[BBC t=2717.8s] UB=34955248.10 LB=10756788.46 gap=69.23%
+[BBC t=2734.6s] UB=34955248.10 LB=10760672.85 gap=69.22%
+[BBC t=2745.7s] UB=34955248.10 LB=10764427.87 gap=69.21%
+[BBC t=2756.5s] UB=34955248.10 LB=10767028.57 gap=69.20%
+[BBC t=2766.5s] UB=34955248.10 LB=10770289.50 gap=69.19%
+[BBC t=2782.5s] UB=34955248.10 LB=10773378.87 gap=69.18%
+[BBC t=2797.4s] UB=34955248.10 LB=10780944.43 gap=69.16%
+[BBC t=2810.9s] UB=34955248.10 LB=10781913.43 gap=69.16%
+[BBC t=2828.1s] UB=34955248.10 LB=10782993.95 gap=69.15%
+[BBC t=2846.2s] UB=34955248.10 LB=10791866.00 gap=69.13%
+[BBC t=2859.5s] UB=34955248.10 LB=10792598.35 gap=69.12%
+[BBC t=2878.9s] UB=34955248.10 LB=10795717.88 gap=69.12%
+[BBC t=2889.3s] UB=34955248.10 LB=10796423.01 gap=69.11%
+[BBC t=2901.9s] UB=34955248.10 LB=10796481.21 gap=69.11%
+[BBC t=2912.8s] UB=34955248.10 LB=10797556.88 gap=69.11%
+[BBC t=2930.6s] UB=34955248.10 LB=10800045.06 gap=69.10%
+[BBC t=2943.6s] UB=34955248.10 LB=10800478.09 gap=69.10%
+[BBC t=2956.5s] UB=34955248.10 LB=10804614.43 gap=69.09%
+[BBC t=2974.6s] UB=34955248.10 LB=10807851.73 gap=69.08%
+[BBC t=2991.4s] UB=34955248.10 LB=10810138.37 gap=69.07%
+[BBC t=3006.1s] UB=34955248.10 LB=10811682.45 gap=69.07%
+[BBC t=3021.0s] UB=34955248.10 LB=10814465.31 gap=69.06%
+[BBC t=3031.3s] UB=34955248.10 LB=10814509.81 gap=69.06%
+[BBC t=3042.8s] UB=34955248.10 LB=10817175.08 gap=69.05%
+[BBC t=3064.3s] UB=34955248.10 LB=10821375.25 gap=69.04%
+[BBC t=3075.5s] UB=34955248.10 LB=10822143.24 gap=69.04%
+[BBC t=3089.6s] UB=34955248.10 LB=10824105.85 gap=69.03%
+[BBC t=3106.4s] UB=34672960.17 LB=10825053.80 gap=68.78%
+[BBC t=3117.9s] UB=34672960.17 LB=10827024.56 gap=68.77%
+[BBC t=3136.8s] UB=34672960.17 LB=10827668.62 gap=68.77%
+[BBC t=3147.8s] UB=34672960.17 LB=10833864.03 gap=68.75%
+[BBC t=3158.0s] UB=34672960.17 LB=10834796.22 gap=68.75%
+[BBC t=3172.0s] UB=34672960.17 LB=10840139.51 gap=68.74%
+[BBC t=3188.3s] UB=34672960.17 LB=10842139.86 gap=68.73%
+[BBC t=3202.0s] UB=34672960.17 LB=10844155.53 gap=68.72%
+[BBC t=3212.9s] UB=34672960.17 LB=10846112.39 gap=68.72%
+[BBC t=3224.5s] UB=34672960.17 LB=10846381.16 gap=68.72%
+[BBC t=3241.0s] UB=34672960.17 LB=10856448.57 gap=68.69%
+[BBC t=3255.3s] UB=34672960.17 LB=10856708.74 gap=68.69%
+[BBC t=3266.5s] UB=34672960.17 LB=10858127.30 gap=68.68%
+[BBC t=3281.4s] UB=34672960.17 LB=10859061.17 gap=68.68%
+[BBC t=3302.5s] UB=34672960.17 LB=10867668.37 gap=68.66%
+[BBC t=3314.4s] UB=34672960.17 LB=10870682.45 gap=68.65%
+[BBC t=3326.0s] UB=34672960.17 LB=10873372.64 gap=68.64%
+[BBC t=3343.6s] UB=34672960.17 LB=10874068.37 gap=68.64%
+[BBC t=3358.5s] UB=34672960.17 LB=10877991.04 gap=68.63%
+[BBC t=3380.2s] UB=34672960.17 LB=10879282.37 gap=68.62%
+[BBC t=3391.0s] UB=34672960.17 LB=10879282.37 gap=68.62%
+[BBC t=3408.8s] UB=34672960.17 LB=10881066.06 gap=68.62%
+[BBC t=3422.2s] UB=34672960.17 LB=10882886.97 gap=68.61%
+[BBC t=3441.3s] UB=33591278.98 LB=10885781.21 gap=67.59%
+[BBC t=3453.5s] UB=33591278.98 LB=10887472.24 gap=67.59%
+[BBC t=3469.8s] UB=33591278.98 LB=10888676.01 gap=67.58%
+[BBC t=3482.8s] UB=33591278.98 LB=10888676.01 gap=67.58%
+[BBC t=3492.8s] UB=33591278.98 LB=10893824.48 gap=67.57%
+[BBC t=3513.9s] UB=33591278.98 LB=10898658.64 gap=67.56%
+[BBC t=3528.6s] UB=33591278.98 LB=10899287.15 gap=67.55%
+[BBC t=3541.8s] UB=33591278.98 LB=10899984.88 gap=67.55%
+[BBC t=3552.1s] UB=33591278.98 LB=10902485.47 gap=67.54%
+[BBC t=3570.4s] UB=33591278.98 LB=10904633.03 gap=67.54%
+[BBC t=3583.7s] UB=33591278.98 LB=10904890.64 gap=67.54%
+[BBC t=3594.8s] UB=33591278.98 LB=10909533.54 gap=67.52%
+[BBC t=3614.2s] UB=33591278.98 LB=10910904.32 gap=67.52%
+[BBC t=3630.7s] UB=33591278.98 LB=10914299.17 gap=67.51%
+[BBC t=3644.6s] UB=33591278.98 LB=10914784.51 gap=67.51%
+[BBC t=3656.5s] UB=33591278.98 LB=10914786.47 gap=67.51%
+[BBC t=3678.7s] UB=33591278.98 LB=10916294.30 gap=67.50%
+[BBC t=3695.4s] UB=33591278.98 LB=10921142.12 gap=67.49%
+[BBC t=3713.8s] UB=33477654.19 LB=10923341.77 gap=67.37%
+[BBC t=3730.7s] UB=33477654.19 LB=10925485.12 gap=67.36%
+[BBC t=3745.5s] UB=33477654.19 LB=10931197.62 gap=67.35%
+[BBC t=3755.8s] UB=33373874.07 LB=10933251.50 gap=67.24%
+[BBC t=3783.0s] UB=33373874.07 LB=10934671.74 gap=67.24%
+[BBC t=3793.7s] UB=33373874.07 LB=10935292.10 gap=67.23%
+[BBC t=3813.1s] UB=33373874.07 LB=10939464.00 gap=67.22%
+[BBC t=3824.2s] UB=33373874.07 LB=10946668.38 gap=67.20%
+[BBC t=3854.8s] UB=33373874.07 LB=10948151.19 gap=67.20%
+[BBC t=3865.7s] UB=32299103.93 LB=10949670.97 gap=66.10%
+[BBC t=3877.9s] UB=32299103.93 LB=10950430.86 gap=66.10%
+[BBC t=3887.9s] UB=32299103.93 LB=10950880.49 gap=66.10%
+[BBC t=3908.6s] UB=32299103.93 LB=10954216.21 gap=66.09%
+[BBC t=3923.2s] UB=32299103.93 LB=10957318.28 gap=66.08%
+[BBC t=3947.1s] UB=32299103.93 LB=10958225.96 gap=66.07%
+[BBC t=3958.3s] UB=32299103.93 LB=10958894.18 gap=66.07%
+[BBC t=3972.6s] UB=32299103.93 LB=10963903.33 gap=66.06%
+[BBC t=3984.3s] UB=32299103.93 LB=10963909.87 gap=66.06%
+[BBC t=4017.4s] UB=32299103.93 LB=10964763.60 gap=66.05%
+[BBC t=4027.5s] UB=32299103.93 LB=10970161.10 gap=66.04%
+[BBC t=4039.3s] UB=32299103.93 LB=10973774.09 gap=66.02%
+[BBC t=4053.2s] UB=32299103.93 LB=10975727.74 gap=66.02%
+[BBC t=4111.6s] UB=32299103.93 LB=10976144.40 gap=66.02%
+[BBC t=4129.5s] UB=32299103.93 LB=10977009.71 gap=66.01%
+[BBC t=4146.8s] UB=32299103.93 LB=10977508.90 gap=66.01%
+[BBC t=4165.3s] UB=32299103.93 LB=10977819.11 gap=66.01%
+[BBC t=4177.2s] UB=32299103.93 LB=10978030.90 gap=66.01%
+[BBC t=4206.0s] UB=32299103.93 LB=10980897.34 gap=66.00%
+[BBC t=4220.3s] UB=32299103.93 LB=10982912.53 gap=66.00%
+[BBC t=4231.3s] UB=32299103.93 LB=10984516.94 gap=65.99%
+[BBC t=4251.7s] UB=29260677.40 LB=10985244.16 gap=62.46%
+[BBC t=4263.7s] UB=29260677.40 LB=10986134.21 gap=62.45%
+[BBC t=4277.2s] UB=29260677.40 LB=10986235.46 gap=62.45%
+[BBC t=4306.4s] UB=29260677.40 LB=10986235.46 gap=62.45%
+[BBC t=4322.1s] UB=29260677.40 LB=10987172.23 gap=62.45%
+[BBC t=4340.0s] UB=29260677.40 LB=10991344.27 gap=62.44%
+[BBC t=4362.0s] UB=29260677.40 LB=10992223.50 gap=62.43%
+[BBC t=4382.9s] UB=29260677.40 LB=10993054.31 gap=62.43%
+[BBC t=4393.2s] UB=29260677.40 LB=10993054.31 gap=62.43%
+[BBC t=4409.0s] UB=29260677.40 LB=10999345.19 gap=62.41%
+[BBC t=4438.9s] UB=29260677.40 LB=10999345.19 gap=62.41%
+[BBC t=4451.1s] UB=29260677.40 LB=11000631.49 gap=62.40%
+[BBC t=4465.2s] UB=29260677.40 LB=11001428.25 gap=62.40%
+[BBC t=4480.2s] UB=29260677.40 LB=11001834.67 gap=62.40%
+[BBC t=4495.4s] UB=29260677.40 LB=11002568.00 gap=62.40%
+[BBC t=4507.2s] UB=29260677.40 LB=11003276.87 gap=62.40%
+[BBC t=4521.5s] UB=29260677.40 LB=11004009.78 gap=62.39%
+[BBC t=4554.2s] UB=29260677.40 LB=11004233.66 gap=62.39%
+[BBC t=4568.3s] UB=29260677.40 LB=11004517.29 gap=62.39%
+[BBC t=4580.3s] UB=29260677.40 LB=11004517.29 gap=62.39%
+[BBC t=4595.4s] UB=29260677.40 LB=11005075.55 gap=62.39%
+[BBC t=4613.1s] UB=29260677.40 LB=11005953.07 gap=62.39%
+[BBC t=4624.6s] UB=29260677.40 LB=11005953.07 gap=62.39%
+[BBC t=4637.7s] UB=29260677.40 LB=11007610.59 gap=62.38%
+[BBC t=4648.1s] UB=29260677.40 LB=11008582.74 gap=62.38%
+[BBC t=4680.1s] UB=29260677.40 LB=11008886.02 gap=62.38%
+[BBC t=4696.2s] UB=29260677.40 LB=11009847.19 gap=62.37%
+[BBC t=4712.9s] UB=29260677.40 LB=11013413.55 gap=62.36%
+[BBC t=4727.5s] UB=29260677.40 LB=11013940.67 gap=62.36%
+[BBC t=4739.1s] UB=29260677.40 LB=11014188.83 gap=62.36%
+[BBC t=4759.2s] UB=29260677.40 LB=11014816.97 gap=62.36%
+[BBC t=4796.9s] UB=29260677.40 LB=11014931.03 gap=62.36%
+[BBC t=4812.9s] UB=29260677.40 LB=11017292.48 gap=62.35%
+[BBC t=4823.9s] UB=29260677.40 LB=11017292.48 gap=62.35%
+[BBC t=4836.7s] UB=29260677.40 LB=11018287.19 gap=62.34%
+[BBC t=4848.8s] UB=27749766.87 LB=11018316.90 gap=60.29%
+[BBC t=4863.4s] UB=27749766.87 LB=11019632.72 gap=60.29%
+[BBC t=4879.0s] UB=27749766.87 LB=11020156.17 gap=60.29%
+[BBC t=4922.3s] UB=27749766.87 LB=11023410.37 gap=60.28%
+[BBC t=4940.9s] UB=27749766.87 LB=11025939.11 gap=60.27%
+[BBC t=4967.7s] UB=27749766.87 LB=11027042.08 gap=60.26%
+[BBC t=4986.4s] UB=27749766.87 LB=11027123.39 gap=60.26%
+[BBC t=5001.3s] UB=27749766.87 LB=11028212.13 gap=60.26%
+[BBC t=5044.8s] UB=27749766.87 LB=11029001.61 gap=60.26%
+[BBC t=5064.0s] UB=27749766.87 LB=11031689.55 gap=60.25%
+[BBC t=5080.9s] UB=27749766.87 LB=11032592.92 gap=60.24%
+[BBC t=5097.2s] UB=27749766.87 LB=11034313.46 gap=60.24%
+[BBC t=5108.4s] UB=27749766.87 LB=11034313.46 gap=60.24%
+[BBC t=5120.9s] UB=27749766.87 LB=11035571.07 gap=60.23%
+[BBC t=5131.8s] UB=27749766.87 LB=11036579.77 gap=60.23%
+[BBC t=5176.5s] UB=27749766.87 LB=11037710.12 gap=60.22%
+[BBC t=5189.8s] UB=27749766.87 LB=11038149.84 gap=60.22%
+[BBC t=5206.0s] UB=27749766.87 LB=11038172.03 gap=60.22%
+[BBC t=5220.3s] UB=27749766.87 LB=11038755.46 gap=60.22%
+[BBC t=5238.7s] UB=27749766.87 LB=11039898.47 gap=60.22%
+[BBC t=5250.1s] UB=27749766.87 LB=11039898.47 gap=60.22%
+[BBC t=5270.5s] UB=27749766.87 LB=11042468.06 gap=60.21%
+[BBC t=5306.6s] UB=27749766.87 LB=11043484.41 gap=60.20%
+[BBC t=5322.7s] UB=27749766.87 LB=11044473.35 gap=60.20%
+[BBC t=5332.9s] UB=27749766.87 LB=11045738.81 gap=60.20%
+[BBC t=5351.1s] UB=27749766.87 LB=11048140.68 gap=60.19%
+[BBC t=5370.3s] UB=27749766.87 LB=11048183.05 gap=60.19%
+[BBC t=5383.5s] UB=27749766.87 LB=11048213.67 gap=60.19%
+[BBC t=5402.2s] UB=27749766.87 LB=11049264.22 gap=60.18%
+[BBC t=5417.3s] UB=27749766.87 LB=11051358.08 gap=60.17%
+[BBC t=5453.0s] UB=27749766.87 LB=11051358.08 gap=60.17%
+[BBC t=5469.5s] UB=27749766.87 LB=11055129.57 gap=60.16%
+[BBC t=5484.8s] UB=27749766.87 LB=11056576.51 gap=60.16%
+[BBC t=5503.8s] UB=27749766.87 LB=11057532.11 gap=60.15%
+[BBC t=5514.8s] UB=27749766.87 LB=11057695.49 gap=60.15%
+[BBC t=5562.9s] UB=27749766.87 LB=11058922.24 gap=60.15%
+[BBC t=5584.9s] UB=27749766.87 LB=11059802.93 gap=60.14%
+[BBC t=5598.6s] UB=27749766.87 LB=11061662.39 gap=60.14%
+[BBC t=5616.9s] UB=27749766.87 LB=11064342.08 gap=60.13%
+[BBC t=5634.9s] UB=27749766.87 LB=11065590.22 gap=60.12%
+[BBC t=5652.3s] UB=27557331.82 LB=11066081.40 gap=59.84%
+[BBC t=5689.7s] UB=27557331.82 LB=11066266.21 gap=59.84%
+[BBC t=5700.3s] UB=27557331.82 LB=11066762.76 gap=59.84%
+[BBC t=5713.3s] UB=27557331.82 LB=11067887.20 gap=59.84%
+[BBC t=5758.5s] UB=27557331.82 LB=11071541.31 gap=59.82%
+[BBC t=5780.1s] UB=27557331.82 LB=11073410.16 gap=59.82%
+[BBC t=5803.9s] UB=27557331.82 LB=11074277.86 gap=59.81%
+[BBC t=5818.1s] UB=27557331.82 LB=11074705.73 gap=59.81%
+[BBC t=5830.4s] UB=27557331.82 LB=11075307.65 gap=59.81%
+[BBC t=5847.6s] UB=27557331.82 LB=11076627.10 gap=59.81%
+[BBC t=5884.2s] UB=27557331.82 LB=11076627.10 gap=59.81%
+[BBC t=5897.9s] UB=27557331.82 LB=11078187.71 gap=59.80%
+[BBC t=5912.8s] UB=27557331.82 LB=11081996.42 gap=59.79%
+[BBC t=5923.2s] UB=27557331.82 LB=11083062.59 gap=59.78%
+[BBC t=5940.4s] UB=27557331.82 LB=11084255.84 gap=59.78%
+[BBC t=5988.4s] UB=27557331.82 LB=11084922.53 gap=59.78%
+[BBC t=6001.5s] UB=27557331.82 LB=11085472.36 gap=59.77%
+[BBC t=6022.6s] UB=27557331.82 LB=11085800.23 gap=59.77%
+[BBC t=6037.5s] UB=27557331.82 LB=11086103.90 gap=59.77%
+[BBC t=6050.6s] UB=27557331.82 LB=11087487.41 gap=59.77%
+[BBC t=6070.8s] UB=27557331.82 LB=11088654.73 gap=59.76%
+[BBC t=6080.8s] UB=27557331.82 LB=11089230.25 gap=59.76%
+[BBC t=6118.7s] UB=27557331.82 LB=11089230.25 gap=59.76%
+[BBC t=6129.8s] UB=27557331.82 LB=11091301.69 gap=59.75%
+[BBC t=6148.6s] UB=27557331.82 LB=11093667.88 gap=59.74%
+[BBC t=6160.9s] UB=27557331.82 LB=11095658.11 gap=59.74%
+[BBC t=6171.5s] UB=27557331.82 LB=11095964.08 gap=59.73%
+[BBC t=6207.5s] UB=27557331.82 LB=11095964.08 gap=59.73%
+[BBC t=6217.9s] UB=27557331.82 LB=11096239.37 gap=59.73%
+[BBC t=6228.4s] UB=27557331.82 LB=11097047.43 gap=59.73%
+[BBC t=6275.5s] UB=27557331.82 LB=11100595.94 gap=59.72%
+[BBC t=6286.0s] UB=27557331.82 LB=11100765.56 gap=59.72%
+[BBC t=6303.2s] UB=27557331.82 LB=11101694.10 gap=59.71%
+[BBC t=6319.8s] UB=27557331.82 LB=11101745.72 gap=59.71%
+[BBC t=6340.7s] UB=27557331.82 LB=11102523.22 gap=59.71%
+[BBC t=6352.1s] UB=27557331.82 LB=11102604.47 gap=59.71%
+[BBC t=6390.3s] UB=27557331.82 LB=11103131.42 gap=59.71%
+[BBC t=6404.2s] UB=27557331.82 LB=11103379.02 gap=59.71%
+[BBC t=6426.7s] UB=27557331.82 LB=11103969.06 gap=59.71%
+[BBC t=6440.2s] UB=27557331.82 LB=11104373.00 gap=59.70%
+[BBC t=6459.2s] UB=27557331.82 LB=11109156.17 gap=59.69%
+[BBC t=6507.8s] UB=27557331.82 LB=11110039.42 gap=59.68%
+[BBC t=6521.1s] UB=27557331.82 LB=11110259.39 gap=59.68%
+[BBC t=6535.3s] UB=27557331.82 LB=11113595.35 gap=59.67%
+[BBC t=6557.7s] UB=27557331.82 LB=11114847.81 gap=59.67%
+[BBC t=6573.6s] UB=27557331.82 LB=11115285.12 gap=59.66%
+[BBC t=6588.1s] UB=27557331.82 LB=11115339.61 gap=59.66%
+[BBC t=6614.8s] UB=27557331.82 LB=11116423.20 gap=59.66%
+[BBC t=6655.3s] UB=27557331.82 LB=11116423.20 gap=59.66%
+[BBC t=6667.9s] UB=27557331.82 LB=11119507.32 gap=59.65%
+[BBC t=6687.1s] UB=27557331.82 LB=11119900.18 gap=59.65%
+[BBC t=6702.7s] UB=27557331.82 LB=11120725.69 gap=59.65%
+[BBC t=6756.4s] UB=27557331.82 LB=11121081.69 gap=59.64%
+[BBC t=6769.8s] UB=27557331.82 LB=11121755.70 gap=59.64%
+[BBC t=6786.8s] UB=27557331.82 LB=11124712.55 gap=59.63%
+[BBC t=6801.4s] UB=27557331.82 LB=11127260.14 gap=59.62%
+[BBC t=6812.6s] UB=27557331.82 LB=11127640.16 gap=59.62%
+[BBC t=6825.9s] UB=27557331.82 LB=11127978.84 gap=59.62%
+[BBC t=6840.2s] UB=27557331.82 LB=11128670.58 gap=59.62%
+[BBC t=6871.2s] UB=27557331.82 LB=11130201.64 gap=59.61%
+[BBC t=6887.6s] UB=27557331.82 LB=11130769.59 gap=59.61%
+[BBC t=6899.2s] UB=27557331.82 LB=11133335.32 gap=59.60%
+[BBC t=6941.7s] UB=27557331.82 LB=11134308.29 gap=59.60%
+[BBC t=6954.5s] UB=27557331.82 LB=11134585.03 gap=59.59%
+[BBC t=6974.4s] UB=27557331.82 LB=11135605.98 gap=59.59%
+[BBC t=6991.9s] UB=27557331.82 LB=11135727.21 gap=59.59%
+[BBC t=7007.6s] UB=27557331.82 LB=11136120.15 gap=59.59%
+[BBC t=7059.1s] UB=27557331.82 LB=11137036.01 gap=59.59%
+[BBC t=7073.4s] UB=27557331.82 LB=11137626.76 gap=59.58%
+[BBC t=7085.2s] UB=27557331.82 LB=11138789.74 gap=59.58%
+[BBC t=7104.5s] UB=27557331.82 LB=11140585.87 gap=59.57%
+[BBC t=7127.5s] UB=27557331.82 LB=11142099.03 gap=59.57%
+[BBC t=7178.9s] UB=27557331.82 LB=11142187.91 gap=59.57%
+[BBC t=7203.1s] UB=27557331.82 LB=11142971.72 gap=59.56%
+[BBC t=7215.7s] UB=27557331.82 LB=11144042.04 gap=59.56%
+[BBC t=7230.5s] UB=27557331.82 LB=11144567.24 gap=59.56%
+[BBC t=7245.7s] UB=27557331.82 LB=11145560.78 gap=59.56%
+[BBC t=7257.0s] UB=27557331.82 LB=11145902.18 gap=59.55%
+[BBC t=7268.2s] UB=27557331.82 LB=11147489.90 gap=59.55%
+----------------------------------------------------------------------
+B&BC done | status=TIME_LIMIT | LB=11148843.145397725 | UB=27557331.81749355 | gap=59.543096482510784%
+cuts_added=22049 user_cuts=0 lazy_cuts=17519 seed_cuts=4530 pareto_enabled=False rootSeedIters=151/300 seeded_LB=10029724.544394074 rootSeedStop=lb_rel_improve_below_0.000500_for_10_rounds rootCutRounds=0/0 parallel_oracles=5 oracle_solves=22350 cache_hits=8 cache_misses=745 root_seed_time=366.56s callback_time=4757.08s
+
+==================================================
+SP MODEL (RP) RESULT SUMMARY
+ 
+ - Engine: multi-cut Branch-and-Benders-Cut (MCVaR)
+ - Disaster Areas: 70
+ - Candidate CCPs: 50
+ - Hospitals: 18
+ - Scenarios: 30
+ - Time Period: 8
+ - Objective Value:     27557331.82
+ - CPU Time:            7277.18 s
+ - num_vars:            1111
+ - num_constrs:         4730
+ - Nodes:               54352
+ - Iteration:           3509999 (Simplex iterations)
+ - Best UB (Objective): 27557331.82
+ - Best LB (Bound):     11148843.15
+ - Final Gap:           59.5431%
+ - VSS(%)    = NA
+ - EVPI(%)   = NA
+--------------------------------------------------
+ - RISK MEASURE (mean-CVaR of second-stage cost):
+ - alpha:               0.9
+ - lambda:              0.5
+ - first_stage_cost:    14495800.00
+ - expected_Q:          7769268.68
+ - VaR (phi*):          16252444.50
+ - CVaR_alpha:          18353794.96
+ - MCVaR:               13061531.82
+--------------------------------------------------
+ - First-stage decisions (Here and Now):
+   CCP 9    -> X: 1, Staff(V): 18, Amb(U):  8, MedicalSupply(Y): 296.00
+   CCP 15   -> X: 1, Staff(V): 21, Amb(U): 10, MedicalSupply(Y): 516.00
+   CCP 18   -> X: 1, Staff(V): 16, Amb(U): 10, MedicalSupply(Y): 386.00
+   CCP 40   -> X: 1, Staff(V): 13, Amb(U):  6, MedicalSupply(Y): 196.00
+   CCP 42   -> X: 1, Staff(V): 12, Amb(U):  7, MedicalSupply(Y): 537.00
+   CCP 47   -> X: 1, Staff(V): 20, Amb(U): 10, MedicalSupply(Y): 340.00
+--------------------------------------------------
+ - B&BC ALGORITHM STATISTICS:
+ - solver_status:        TIME_LIMIT
+ - multi_cut:            True
+ - total_cuts:           22049
+ - seed_cuts:            4530 (root seed 151/300)
+ - seeded_LB:            10029724.544394074
+ - root_seed_stop:       lb_rel_improve_below_0.000500_for_10_rounds (366.56 s)
+ - lazy_cuts:            17519
+ - user_cuts:            0 (root rounds 0/0)
+ - oracle_solves:        22350
+ - incumbent_evals:      586
+ - callback_time:        4757.08 s
+ - master_nodes:         54352
+ - wall_time_total:      7280.80 s
+==================================================

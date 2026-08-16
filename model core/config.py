@@ -112,11 +112,29 @@ VSS_EVPI_PARALLEL_WORKERS  = 6     # WS/EEV 同時求解的情境數（1 = 循�
 # ── Benders / B&BC 設定（Phase 0；只影響 lshaped 引擎，extensive form 完全不受影響）──
 SOLVER_ENGINE            = "lshaped"     # "extensive" | "lshaped"（runner 依此分派求解引擎）
 BENDERS_MULTI_CUT        = True    # False = single-cut（僅供實驗比較，預設恆 True）
-BENDERS_ROOT_SEED_ITERS  = 300     # 正式 B&C 前，LP 鬆弛 master 的 ordinary cut 墊切輪數上限
+# ── Root seeding（2026-08-16 依 plan/17 診斷結果調整）──
+# 問題：上一輪 small case 的 seeding 在第 151/300 輪、LB=10,029,725 就停止，
+#       但 Extensive 的根節點 LP 下界是 17,865,909 —— Benders 收斂後理論上
+#       應該等於這個值，卻只拿到 56%。停止當下每輪還在漲 0.038%，且只花了
+#       367 秒（總預算的 5%）。這是典型的 Benders tailing-off 被 5e-4 的
+#       停滯門檻誤判成收斂，直接導致 BBC 的 LB 反而輸給 Extensive。
+# 對策：把停滯門檻收緊 10 倍、停滯輪數放寬 4 倍。
+#
+# ⚠️ ITERS 為什麼是 600 而不是更大：
+#    (1) 上一輪是被「停滯判定」在第 151 輪停掉的，300 輪的上限根本沒用到
+#        → 真正該修的是 REL_TOL / STALL_ROUNDS，ITERS 只是保險絲。
+#    (2) lshaped_core 的 seeding 只有「總時限用完」一個時間保護，所以 ITERS
+#        就是實質時間上限。實測 151 輪 = 366.56s（2.43 s/輪）。若每輪成本固定，
+#        600 輪 ≈ 1,460s（總預算 20%）；即使每輪成本隨切割線性變貴，也還有
+#        時限保護會接手，最壞情況只是退化成「只做 seeding」而不會崩潰。
+#    (3) 每輪成本主要來自 50 個情境 oracle（各約 10~18 萬變數），master 只有
+#        100 個變數（50 X + 50 θ），所以成本接近固定而非二次成長。
+#    先用 600 跑診斷實驗量到真實的 s/輪，再決定正式實驗要不要調高。
+BENDERS_ROOT_SEED_ITERS  = 600     # 正式 B&C 前，LP 鬆弛 master 的 ordinary cut 墊切輪數上限（原 300）
 BENDERS_ROOT_SEED_ADAPTIVE = True  # 保留相容欄位；實際以相對 LB 改善門檻控制停止
-BENDERS_ROOT_SEED_STALL_ROUNDS = 10 # seeded LB 連 10 輪改善不足門檻即停止
+BENDERS_ROOT_SEED_STALL_ROUNDS = 40 # seeded LB 連 40 輪改善不足門檻即停止（原 10）
 BENDERS_ROOT_SEED_LB_ABS_TOL = 1e-3   # 保留相容欄位；Papadakos seeding 不再使用絕對門檻
-BENDERS_ROOT_SEED_LB_REL_TOL = 5e-4   # seeded LB 單輪相對改善 < 0.05% 視為停滯
+BENDERS_ROOT_SEED_LB_REL_TOL = 5e-5   # seeded LB 單輪相對改善 < 0.005% 才視為停滯（原 5e-4）
 BENDERS_ROOT_SEED_ROUND_HEUR_FREQ = 10
 BENDERS_PAPADAKOS_BLEND   = 0.5
 BENDERS_PARETO_ENABLED    = True    # False = seeding/user cuts 僅加 standard cut，不建 core point
@@ -124,7 +142,11 @@ BENDERS_PROGRESS_BOUND_FLOOR = -1e50
 BENDERS_ROOT_CUT_ROUNDS  = 15      # root 節點 callback 分數解 user cut 輪數（0 = 關閉 root cuts）
 BENDERS_USE_USER_CUTS    = True    # True: root 節點分數解 user cut
 BENDERS_CUT_VIOL_REL_TOL = 1e-6    # cut 違反判定：Q_s > θ_s + tol·max(1,|Q_s|)
-BENDERS_PARALLEL_ORACLES = 5       # B&BC callback/root seeding 情境 oracle 平行數（1 = 循序）
+# 情境 oracle 平行數（1 = 循序）。oracle 是單執行緒 LP（ScenarioOracle threads=1），
+# 所以平行度 ≈ 佔用的實體核心數。實測 callback 佔 BBC 總時間 28%~67%，
+# 情境數又從 30 提高到 50，故由 5 提高到 10（機器為 12 實體核心 / 24 邏輯執行緒，
+# 留 2 核給 master 與作業系統）。若換到核心數較少的機器，請調回 5。
+BENDERS_PARALLEL_ORACLES = 10
 BENDERS_EV_WARM_START    = True    # 用 EV 一階解當 master 初始 incumbent
 BENDERS_MIPFOCUS         = 3       # 3 = 強化 bound；None = 不覆寫 Gurobi 預設
 BENDERS_HEURISTICS       = 0.05    # 啟發式時間比例；None = 不覆寫 Gurobi 預設

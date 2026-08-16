@@ -41,7 +41,7 @@ from typing import Any
 # 規模：small / medium / large 三個 case 都會依序跑（plan/15 的 SCALE_PROFILES）。
 SCALES = ["small", "medium", "large"]
 
-BASE_SCENARIOS = 30
+BASE_SCENARIOS = 50   # 2026-08-16 老師指示：情境數由 30 提高到 50
 BASE_CCP_SAMPLE_SIZE = None
 BASE_SAMPLE_RATIO = 1.0
 BASE_TIME_PERIODS = 8
@@ -159,6 +159,11 @@ _SPEC_BY_NAME = {spec["name"]: spec for spec in MODEL_SPECS}
 RUN_ONLY_CONFIGS: list[str] = []
 
 # ── 中斷續跑 ──
+# ⚠️ 目前是「空字串」= 從頭跑全部 72 個 case，不會沿用任何舊結果。
+#    （2026-08-16：使用者指定本次要從頭重跑，因為 config 已變更，
+#      舊結果的 S=30、舊 seeding 參數與本次不可比，混在一起會出錯。）
+#    只有在「同一組參數」的實驗被中斷、想接著跑時，才填上次的 raw CSV 檔名。
+#
 # 指向上次未跑完的 raw CSV（填 experiment result/ 內的檔名即可，或絕對路徑）。
 # 設定後只補跑「缺少或非 OK」的 case，並把上次已完成(OK)的結果一起併進本次新輸出，
 # 得到完整一份。留空 = 從頭跑全部。
@@ -505,6 +510,11 @@ def _write_settings_sheet(wb, run_id: str, log_run_dir: Path | None,
         ],
         ("bbc_multi_cut_common", True),
         ("bbc_parallel_oracles_common", int(cfg.BENDERS_PARALLEL_ORACLES)),
+        # ── plan/17 診斷後調整的 root seeding 參數（可追溯性）──
+        ("bbc_root_seed_iters", DEFAULT_ROOT_SEED_ITERS),
+        ("bbc_root_seed_lb_rel_tol", float(cfg.BENDERS_ROOT_SEED_LB_REL_TOL)),
+        ("bbc_root_seed_stall_rounds", int(cfg.BENDERS_ROOT_SEED_STALL_ROUNDS)),
+        ("bbc_root_cut_rounds", DEFAULT_ROOT_CUT_ROUNDS),
         ("bbc_mip_focus_common", DEFAULT_MIPFOCUS),
         ("bbc_heuristics_common", DEFAULT_HEURISTICS),
         ("bbc_numeric_focus_common", DEFAULT_NUMERIC_FOCUS),
@@ -1195,9 +1205,21 @@ def main() -> None:
           f"（實際會因為 gap≤{MIP_GAP:.0%} 提早結束而少很多）")
     print(f"硬超時：B&BC 類 {hard_timeout_for({}) / 60:.0f} 分鐘/case、"
           f"Extensive {hard_timeout_for({'engine': 'extensive'}) / 60:.0f} 分鐘/case")
+    # plan/17 診斷後調整的 B&BC 參數，印出來方便對照
+    n_oracles = int(cfg.BENDERS_PARALLEL_ORACLES)
+    est_s_per_round = 2.43 * (BASE_SCENARIOS / 30.0) * (5.0 / max(1, n_oracles))
+    est_seed_s = DEFAULT_ROOT_SEED_ITERS * est_s_per_round
+    print(f"root seeding：上限 {DEFAULT_ROOT_SEED_ITERS} 輪、停滯門檻 "
+          f"{cfg.BENDERS_ROOT_SEED_LB_REL_TOL:.0e} × {cfg.BENDERS_ROOT_SEED_STALL_ROUNDS} 輪；"
+          f"平行 oracle {n_oracles}")
+    print(f"  → 推估 seeding 最多吃掉 {est_seed_s:.0f}s "
+          f"（總預算 {TIME_LIMIT:.0f}s 的 {est_seed_s / TIME_LIMIT * 100:.0f}%），其餘留給 B&C")
     print(f"CSV   : {csv_path}\nExcel : {xlsx_path}\nLogs  : {log_run_dir}")
 
     prior_ok: dict[str, dict[str, Any]] = {}
+    if not RESUME_FROM_CSV:
+        print("\n[FRESH START] RESUME_FROM_CSV 為空 → 本次從頭跑全部 "
+              f"{len(expected_test_ids())} 個 case，不沿用任何舊結果。")
     if RESUME_FROM_CSV:
         prior_path = Path(RESUME_FROM_CSV)
         if not prior_path.is_absolute():

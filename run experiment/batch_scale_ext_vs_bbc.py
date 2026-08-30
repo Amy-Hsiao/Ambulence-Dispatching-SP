@@ -151,7 +151,8 @@ FIELDNAMES = [
     "scale", "test_id", "config", "I", "J", "H", "S", "T",
     "obj_value", "best_lb", "best_ub", "gap_pct", "cpu_s", "wall_s",
     "nodes", "iterations", "num_vars", "num_constrs",
-    "opened_ccps", "first_stage_decision", "first_stage_cost",
+    "opened_ccps", "idle_open_ccps", "idle_wasted_cost",
+    "first_stage_decision", "first_stage_cost",
     "total_cuts", "seed_cuts", "lazy_cuts", "user_cuts",
     "root_seed_lb", "root_seed_iters_done", "root_seed_stop_reason",
     "root_seed_time_s", "root_cut_rounds_done", "oracle_solves",
@@ -166,7 +167,7 @@ TEXT_KEYS = {
 }
 INTEGER_KEYS = {
     "I", "J", "H", "S", "T", "nodes", "iterations", "num_vars", "num_constrs",
-    "opened_ccps", "total_cuts", "seed_cuts", "lazy_cuts", "user_cuts",
+    "opened_ccps", "idle_open_ccps", "total_cuts", "seed_cuts", "lazy_cuts", "user_cuts",
     "root_seed_iters_done", "root_cut_rounds_done", "oracle_solves",
     "incumbent_evals", "parallel_oracles",
 }
@@ -318,18 +319,56 @@ def move_newest_log(before: set[Path], destination: Path) -> Path | None:
     return destination
 
 
+def _clean_int(value: Any) -> int:
+    """把求解器回傳的整數變數值清成乾淨的非負整數。
+
+    V/U/Y 都是 INTEGER 且 lb=0，但 Gurobi 會回傳 -0.0 或 -1e-11 這種
+    數值誤差，直接用 f"{v:.0f}" 會印出 "-0"（看起來像負數，其實就是 0）。
+    """
+    v = round(float(value))
+    return 0 if v == 0 else v      # 消掉 -0
+
+
+def idle_open_ccps(fs: dict[str, Any] | None) -> list[str]:
+    """找出「有開設但完全沒配資源」的 CCP（X=1 但 V=U=ΣY=0）。
+
+    這種 CCP 在模型中**完全沒有作用**：
+        SupplyCap: Σ_l Σ_t supply_consumption[l]·REG ≤ Σ_h Y[h,j] = 0
+                   ⇒ REG = 0 ⇒ FI = 0（沒有傷患能被送進來）
+    卻仍要付 ccp_fixed_opening_cost（150 萬）。
+    把 X 改成 0 可以直接省下這筆錢且不違反任何限制式，
+    所以只要出現這種 CCP，就代表**這個解一定不是最佳解**（時限內沒清乾淨）。
+    數量 × 150 萬 = 目標值至少可以再降低的金額。
+    """
+    if not fs:
+        return []
+    supply: dict[str, float] = {}
+    for (h, j), value in (fs.get("Y") or {}).items():
+        supply[j] = supply.get(j, 0.0) + float(value)
+    idle = []
+    for j in sorted(fs.get("X") or {}):
+        if float(fs["X"][j]) > 0.5:
+            if (_clean_int(fs["V"][j]) == 0 and _clean_int(fs["U"][j]) == 0
+                    and round(supply.get(j, 0.0), 6) == 0):
+                idle.append(str(j))
+    return idle
+
+
 def first_stage_string(fs: dict[str, Any] | None) -> str:
     if not fs:
         return "NA"
     supply: dict[str, float] = {}
     for (h, j), value in fs["Y"].items():
         supply[j] = supply.get(j, 0.0) + float(value)
+    idle = set(idle_open_ccps(fs))
     lines = []
     for j in sorted(fs["X"]):
         if float(fs["X"][j]) > 0.5:
+            mark = "   <-- 開設但無任何資源（浪費固定成本）" if str(j) in idle else ""
             lines.append(
-                f"CCP {j:4s} -> X: 1, Staff(V): {float(fs['V'][j]):.0f}, "
-                f"Amb(U): {float(fs['U'][j]):.0f}, MedicalSupply(Y): {supply.get(j, 0.0):.2f}"
+                f"CCP {j:4s} -> X: 1, Staff(V): {_clean_int(fs['V'][j])}, "
+                f"Amb(U): {_clean_int(fs['U'][j])}, "
+                f"MedicalSupply(Y): {supply.get(j, 0.0):.2f}{mark}"
             )
     return "\n".join(lines) if lines else "none opened"
 
@@ -371,6 +410,13 @@ def sanity_warnings(row: dict[str, Any]) -> list[str]:
         issues.append(
             f"root seeding 吃掉 {seed_t:.0f}s = 總時限的 "
             f"{seed_t / TIME_LIMIT * 100:.0f}%（正常應 < 15%）"
+        )
+    idle_n = num("idle_open_ccps")
+    if idle_n:
+        waste = num("idle_wasted_cost") or 0.0
+        issues.append(
+            f"{idle_n:.0f} 座 CCP 開設但無任何資源（V=U=Y=0，模型中完全無作用），"
+            f"白付固定成本 {waste:,.0f} → 此解必非最佳，目標值至少還能再降這麼多"
         )
     return issues
 
@@ -443,6 +489,15 @@ def _run_one_case_logged(portal, case, scale, run_idx, total,
     st = summary.get("bbc_stats", {}) or {}
     fs = summary.get("first_stage")
     opened = [j for j, v in ((fs or {}).get("X") or {}).items() if float(v) > 0.5]
+    idle = idle_open_ccps(fs)
+    # 每座閒置 CCP 都白付一次固定開設成本 → 目標值至少還能再降這麼多
+    try:
+        with temporary_config(case, scale):
+            _p = cfg.generate_data(scale=scale)["deterministic_parameters"]
+        unit_open_cost = float(next(iter(_p["ccp_fixed_opening_cost"].values())))
+    except Exception:  # noqa: BLE001
+        unit_open_cost = float(cfg.PARAMETERS["ccp_fixed_opening_cost"])
+    idle_cost = len(idle) * unit_open_cost
     objective = float(objective)
     best_lb = summary.get("best_lb")
     gap = summary.get("gap_pct")
@@ -456,6 +511,8 @@ def _run_one_case_logged(portal, case, scale, run_idx, total,
         "num_vars": getattr(model, "NumVars", "NA"),
         "num_constrs": getattr(model, "NumConstrs", "NA"),
         "opened_ccps": len(opened),
+        "idle_open_ccps": len(idle),
+        "idle_wasted_cost": f"{idle_cost:.2f}",
         "first_stage_decision": first_stage_string(fs),
         "first_stage_cost": summary.get("first_stage_cost", "NA"),
         "total_cuts": st.get("cuts_added", "NA"),

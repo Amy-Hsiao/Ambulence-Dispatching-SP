@@ -114,7 +114,9 @@ def verify_excel(xlsx: Path, label: str, expected_rows: int):
         rows_i = [ws.cell(3 + i, 2).value for i in range(len(M.SCALES))]
         check(f"[{label}] 災區數欄 = 70/100/130", rows_i == [70, 100, 130], str(rows_i))
         js = [ws.cell(3 + i, 3).value for i in range(len(M.SCALES))]
-        check(f"[{label}] |J| 三規模皆 50", js == [50, 50, 50], str(js))
+        expected_j = [M.scale_counts(s)["J"] for s in M.SCALES]
+        check(f"[{label}] |J| 三規模相同且等於 config 設定 {expected_j[0]}",
+              js == expected_j and len(set(js)) == 1, str(js))
     finally:
         wb.close()
 

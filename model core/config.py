@@ -63,12 +63,21 @@ N_DISASTER_FULL = 229
 N_CCP_FULL = 50
 N_HOSPITAL_FULL = 20
 
-# 2026-08 放大規模（老師要求）：災區 70/100/130、CCP 50、醫院 18。
+# 2026-08 規模設定：災區 70/100/130、CCP 候選點 20、醫院 18。
+#
+# |J| 為什麼定 20（2026-08-16 定案）：
+#   |J| = 50 時 BBC 的 gap 卡在 50%+、Extensive 只跑得完 1 個節點（見 plan/17）；
+#   降到 20 之後 BBC 的 gap 掉到 10.9% / 10.5% / 29.7%，節點數從 1 → 9856。
+#   候選點數量是求解難度的主因，20 是能穩定收斂的規模。
+#   這也與參考文獻 Jin et al. (2024) Table 8 一致 —— 該文三個規模的
+#   候選設施數固定為 13/13/13，只有需求點數與資源總量隨規模變動。
+#
+# 候選點以 nested 方式從 50 個裡取前 20 個（固定 seed，三個 scale 相同）。
 SCALE_PROFILES = {
-    "small":  {"n_disaster": 70,  "n_hospital": 18, "n_ccp": 50, "spatial_clusters": 3},
-    "medium": {"n_disaster": 100, "n_hospital": 18, "n_ccp": 50, "spatial_clusters": 3},
-    "large":  {"n_disaster": 130, "n_hospital": 18, "n_ccp": 50, "spatial_clusters": 3},
-    "full":   {"n_disaster": 229, "n_hospital": 20, "n_ccp": 50, "spatial_clusters": 3},
+    "small":  {"n_disaster": 70,  "n_hospital": 18, "n_ccp": 20, "spatial_clusters": 3},
+    "medium": {"n_disaster": 100, "n_hospital": 18, "n_ccp": 20, "spatial_clusters": 3},
+    "large":  {"n_disaster": 130, "n_hospital": 18, "n_ccp": 20, "spatial_clusters": 3},
+    "full":   {"n_disaster": 229, "n_hospital": 20, "n_ccp": 20, "spatial_clusters": 3},
 }
 # 抽樣模式："nested" = small ⊂ medium ⊂ large（固定 shuffle 取前綴）。
 SCALE_SAMPLING_MODE = "nested"

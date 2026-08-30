@@ -23,9 +23,9 @@ class ScaleProfileTests(unittest.TestCase):
     # (staff, ccp_amb, ccp_staff_ub, ccp_amb_ub, ccp_supply_ub, hosp_supply_ub, hosp_fleet),
     # (physical minor, moderate, severe)
     EXPECTED = {
-        "small":  ((70, 50, 18),  (299,  72, 57, 10, 1086, 290,  9), (78, 24,  8)),
-        "medium": ((100, 50, 18), (427, 103, 81, 14, 1551, 414, 13), (111, 34, 11)),
-        "large":  ((130, 50, 18), (555, 134, 105, 19, 2016, 538, 17), (145, 44, 15)),
+        "small":  ((70, 20, 18),  (299,  72, 57, 10, 1086, 290,  9), (78, 24,  8)),
+        "medium": ((100, 20, 18), (427, 103, 81, 14, 1551, 414, 13), (111, 34, 11)),
+        "large":  ((130, 20, 18), (555, 134, 105, 19, 2016, 538, 17), (145, 44, 15)),
     }
 
     @classmethod
@@ -94,11 +94,11 @@ class ScaleProfileTests(unittest.TestCase):
         self.assertEqual(repeated["sets"]["H"], medium["sets"]["H"])
 
     def test_all_scales_share_the_same_ccp_candidates(self):
-        """|J| = 50 對三個規模都相同，跨規模的一階決策空間一致。"""
+        """|J| = 20 對三個規模都相同，跨規模的一階決策空間一致。"""
         reference = self.instances["small"]["sets"]["J"]
         for scale in ("medium", "large"):
             self.assertEqual(self.instances[scale]["sets"]["J"], reference)
-        self.assertEqual(len(reference), 50)
+        self.assertEqual(len(reference), 20)
 
     def test_global_pool_remains_binding(self):
         """全域醫護池 < Σ per-CCP 上限 → 全域池是綁定約束（跨規模結構一致）。"""

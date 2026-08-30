@@ -35,6 +35,273 @@ import risk_core
 
 
 # ====================================================================== #
+# LBF — Lower Bounding Functional (Jensen-based average-scenario LP)      #
+# ====================================================================== #
+
+def _compute_average_scenario_data(
+    instance: dict[str, Any],
+    S_selected: list[str],
+    norm_probs: dict[str, float],
+) -> dict[str, Any]:
+    """Compute probability-weighted average of scenario data across S_selected.
+
+    Returns a flat (non-scenario-indexed) dict with keys:
+        "demand"                    : {t: {i: {l: val}}}
+        "road_availability_ij"      : {i: {j: {t: val}}}
+        "road_availability_jh"      : {j: {h: {t: val}}}
+        "hospital_receiving_capacity": {h: {t: val}}
+    """
+    sd = instance["scenario_data"]
+    sets = instance["sets"]
+    I, J, H = sets["I"], sets["J"], sets["H"]
+    L = sets["L"]
+    T = sets["T"]
+
+    # demand[s][t][i][l] → avg_demand[t][i][l]
+    avg_demand: dict[str, dict[str, dict[str, float]]] = {}
+    for t in T:
+        avg_demand[t] = {}
+        for i in I:
+            avg_demand[t][i] = {}
+            # Collect all severity levels across scenarios
+            all_l: set[str] = set()
+            for s in S_selected:
+                all_l.update(sd["demand"][s][t][i].keys())
+            for l in all_l:
+                avg_demand[t][i][l] = sum(
+                    norm_probs[s] * sd["demand"][s][t][i].get(l, 0)
+                    for s in S_selected
+                )
+
+    # road_availability_ij[s][i][j][t] → avg[i][j][t]
+    avg_road_ij: dict[str, dict[str, dict[str, float]]] = {}
+    for i in I:
+        avg_road_ij[i] = {}
+        for j in J:
+            avg_road_ij[i][j] = {}
+            for t in T:
+                avg_road_ij[i][j][t] = sum(
+                    norm_probs[s] * sd["road_availability_ij"][s][i][j][t]
+                    for s in S_selected
+                )
+
+    # road_availability_jh[s][j][h][t] → avg[j][h][t]
+    avg_road_jh: dict[str, dict[str, dict[str, float]]] = {}
+    for j in J:
+        avg_road_jh[j] = {}
+        for h in H:
+            avg_road_jh[j][h] = {}
+            for t in T:
+                avg_road_jh[j][h][t] = sum(
+                    norm_probs[s] * sd["road_availability_jh"][s][j][h][t]
+                    for s in S_selected
+                )
+
+    # hospital_receiving_capacity[s][h][t] → avg[h][t]
+    avg_hosp_cap: dict[str, dict[str, float]] = {}
+    for h in H:
+        avg_hosp_cap[h] = {}
+        for t in T:
+            avg_hosp_cap[h][t] = sum(
+                norm_probs[s] * sd["hospital_receiving_capacity"][s][h][t]
+                for s in S_selected
+            )
+
+    return {
+        "demand": avg_demand,
+        "road_availability_ij": avg_road_ij,
+        "road_availability_jh": avg_road_jh,
+        "hospital_receiving_capacity": avg_hosp_cap,
+    }
+
+
+def _embed_lbf_in_master(
+    m: gp.Model,
+    mv: dict[str, Any],
+    instance: dict[str, Any],
+    S_selected: list[str],
+    norm_probs: dict[str, float],
+) -> None:
+    """Embed the average-scenario second-stage LP into the master as an LBF.
+
+    By Jensen's inequality, Q̄(x) = Σ p_s Q_s(x) ≥ Q(x; ξ̄) where ξ̄ is the
+    probability-weighted average scenario.  This provides a structural lower
+    bound on the weighted θ sum from the first iteration.
+
+    Adds continuous second-stage variables (FI_avg, FO_avg, etc.) and all
+    second-stage constraints using average scenario data.  Then adds a
+    linking constraint:  Σ p_s θ_s ≥ (second-stage cost of avg scenario).
+    """
+    sets = instance["sets"]
+    I, J, H = sets["I"], sets["J"], sets["H"]
+    L = sets["L"]
+    L_transfer = sets["L_transfer"]
+    T = sets["T"]
+    params = instance["deterministic_parameters"]
+    cap_ij = instance["road_capacity"]["cap_ij"]
+    cap_jh = instance["road_capacity"]["cap_jh"]
+    cost_ij = instance["transport_cost"]["cost_ij"]
+    cost_jh = instance["transport_cost"]["cost_jh"]
+
+    avg = _compute_average_scenario_data(instance, S_selected, norm_probs)
+
+    X, V, U, Y = mv["X"], mv["V"], mv["U"], mv["Y"]
+
+    # ----- average-scenario second-stage continuous variables ----- #
+    FI_a  = m.addVars(I, J, L,          T, vtype=GRB.CONTINUOUS, lb=0, name="FI_avg")
+    FO_a  = m.addVars(J, H, L_transfer, T, vtype=GRB.CONTINUOUS, lb=0, name="FO_avg")
+    RM_a  = m.addVars(I, L,             T, vtype=GRB.CONTINUOUS, lb=0, name="RM_avg")
+    REG_a = m.addVars(J, L,             T, vtype=GRB.CONTINUOUS, lb=0, name="REG_avg")
+    TRT_a = m.addVars(J, L,             T, vtype=GRB.CONTINUOUS, lb=0, name="TRT_avg")
+    WAT_a = m.addVars(J, L_transfer,    T, vtype=GRB.CONTINUOUS, lb=0, name="WAT_avg")
+
+    # ----- second-stage cost expression for the average scenario ----- #
+    avg_second_cost = (
+        gp.quicksum(
+            params["disaster_area_remaining_penalty_by_severity"][l] * RM_a[i, l, t]
+            for i in I for l in L for t in T
+        )
+        + gp.quicksum(
+            params["ccp_waiting_penalty_by_severity"][l] * WAT_a[j, l, t]
+            for j in J for l in L_transfer for t in T
+        )
+        + gp.quicksum(
+            cost_ij[i][j] * FI_a[i, j, l, t]
+            for i in I for j in J for l in L for t in T
+        )
+        + gp.quicksum(
+            cost_jh[j][h] * FO_a[j, h, l, t]
+            for j in J for h in H for l in L_transfer for t in T
+        )
+    )
+
+    # ----- Jensen bounding constraint: Σ p_s θ_s ≥ avg second-stage cost ----- #
+    theta = mv["theta"]
+    if "__agg__" in theta:
+        # single-cut: the aggregate θ already represents Σ p_s θ_s
+        theta_sum = theta["__agg__"]
+    else:
+        theta_sum = gp.quicksum(norm_probs[s] * theta[s] for s in S_selected)
+    m.addConstr(theta_sum >= avg_second_cost, "LBF_Jensen")
+
+    # ----- replicate all second-stage constraints with average data ----- #
+    for t_idx, t in enumerate(T):
+        prev_t = T[t_idx - 1] if t_idx > 0 else None
+
+        # Road capacity i→j
+        for i in I:
+            for j in J:
+                m.addConstr(
+                    gp.quicksum(FI_a[i, j, l, t] for l in L)
+                    <= cap_ij[i][j] * avg["road_availability_ij"][i][j][t] * X[j],
+                    f"LBF_RoadCap_IJ_{i}_{j}_{t}",
+                )
+
+        # Road capacity j→h
+        for j in J:
+            for h in H:
+                m.addConstr(
+                    gp.quicksum(FO_a[j, h, l, t] for l in L_transfer)
+                    <= cap_jh[j][h] * avg["road_availability_jh"][j][h][t] * X[j],
+                    f"LBF_RoadCap_JH_{j}_{h}_{t}",
+                )
+
+        # CCP ambulance capacity
+        for j in J:
+            m.addConstr(
+                gp.quicksum(FI_a[i, j, l, t] for i in I for l in L_transfer)
+                <= params["ccp_ambulance_casualty_capacity"] * U[j],
+                f"LBF_CCP_AmbCap_{j}_{t}",
+            )
+
+        # Hospital receiving capacity
+        for h in H:
+            m.addConstr(
+                gp.quicksum(FO_a[j, h, l, t] for j in J for l in L_transfer)
+                <= params["hospital_ambulance_casualty_capacity"]
+                   * params["hospital_ambulance_fleet"][h],
+                f"LBF_Hosp_AmbCap_{h}_{t}",
+            )
+            m.addConstr(
+                gp.quicksum(FO_a[j, h, l, t] for j in J for l in L_transfer)
+                <= avg["hospital_receiving_capacity"][h][t],
+                f"LBF_Hosp_ReceiveCap_{h}_{t}",
+            )
+
+        # Remaining patients at disaster area
+        for i in I:
+            for l in L:
+                prev_rm = RM_a[i, l, prev_t] if prev_t else 0
+                demand_val = avg["demand"][t][i].get(l, 0)
+                m.addConstr(
+                    RM_a[i, l, t]
+                    == prev_rm - gp.quicksum(FI_a[i, j, l, t] for j in J) + demand_val,
+                    f"LBF_Flow_RM_{i}_{l}_{t}",
+                )
+
+        for j in J:
+            # REG and TRT
+            for l in L:
+                m.addConstr(
+                    REG_a[j, l, t] == gp.quicksum(FI_a[i, j, l, t] for i in I),
+                    f"LBF_Flow_REG_{j}_{l}_{t}",
+                )
+                tau = int(params["treatment_duration_by_severity"][l])
+                start_idx = max(0, t_idx - tau + 1)
+                rolling = T[start_idx: t_idx + 1]
+                m.addConstr(
+                    TRT_a[j, l, t] == gp.quicksum(REG_a[j, l, r] for r in rolling),
+                    f"LBF_Flow_TRT_{j}_{l}_{t}",
+                )
+
+            # WAT (ambulance-severity only)
+            for l in L_transfer:
+                tau = int(params["treatment_duration_by_severity"][l])
+                prev_wat = WAT_a[j, l, prev_t] if prev_t else 0
+                completed = REG_a[j, l, T[t_idx - tau]] if (t_idx - tau) >= 0 else 0
+                m.addConstr(
+                    WAT_a[j, l, t]
+                    == prev_wat + completed - gp.quicksum(FO_a[j, h, l, t] for h in H),
+                    f"LBF_Flow_WAT_{j}_{l}_{t}",
+                )
+
+            # Physical capacity (TRT + WAT for ambulance severities)
+            for l in L_transfer:
+                m.addConstr(
+                    TRT_a[j, l, t] + WAT_a[j, l, t]
+                    <= params["ccp_physical_capacity_by_severity"][l] * X[j],
+                    f"LBF_CCP_PhysicalCap_{j}_{l}_{t}",
+                )
+            for l in [sev for sev in L if sev not in L_transfer]:
+                m.addConstr(
+                    TRT_a[j, l, t]
+                    <= params["ccp_physical_capacity_by_severity"][l] * X[j],
+                    f"LBF_CCP_PhysicalCap_{j}_{l}_{t}",
+                )
+
+            # Staff capacity
+            m.addConstr(
+                gp.quicksum(
+                    TRT_a[j, l, t] / params["staff_treatment_rate_by_severity"][l]
+                    for l in L
+                ) <= V[j],
+                f"LBF_StaffCap_{j}_{t}",
+            )
+
+    # Supply consumption (outside t loop)
+    for j in J:
+        m.addConstr(
+            gp.quicksum(
+                params["supply_consumption_by_severity"][l] * REG_a[j, l, t]
+                for l in L for t in T
+            ) <= gp.quicksum(Y[h, j] for h in H),
+            f"LBF_SupplyCap_{j}",
+        )
+
+    m.update()
+
+
+# ====================================================================== #
 # Phase 1 — ScenarioOracle                                               #
 # ====================================================================== #
 
@@ -184,7 +451,8 @@ def build_master(instance: dict[str, Any], S_selected: list[str],
                  norm_probs: dict[str, float],
                  time_limit: float = 3600.0, mip_gap: float = 0.01,
                  multi_cut: bool = True,
-                 risk_cfg: dict[str, Any] | None = None):
+                 risk_cfg: dict[str, Any] | None = None,
+                 lbf_enabled: bool = False):
     """建 Benders master：一階變數 + 一階限制式 + θ 變數。
 
     Returns (model, vars_dict)；vars_dict 含 X/V/U/Y 與 theta（{s: var} 或 {"__agg__": var}）。
@@ -250,6 +518,8 @@ def build_master(instance: dict[str, Any], S_selected: list[str],
           "first_stage_cost_expr": first_stage_cost}
     if risk_cfg is not None:
         risk_core.attach_risk_to_master(m, mv, S_selected, norm_probs, risk_cfg)
+    if lbf_enabled:
+        _embed_lbf_in_master(m, mv, instance, S_selected, norm_probs)
     return m, mv
 
 
@@ -823,6 +1093,7 @@ def solve_bbc(
     use_user_cuts: bool | None = None,
     ev_warm_start: bool | None = None,
     pareto_enabled: bool | None = None,
+    lbf_enabled: bool | None = None,
     diagnostic_stop_after_root_seeding: bool = False,
     diagnostic_stop_after_first_incumbent: bool = False,
     verbose: bool = True,
@@ -879,6 +1150,14 @@ def solve_bbc(
         if pareto_enabled is None
         else bool(pareto_enabled)
     )
+    lbf_enabled = (
+        getattr(config, "BENDERS_LBF_ENABLED", False)
+        if lbf_enabled is None
+        else bool(lbf_enabled)
+    )
+    incumbent_early_term = bool(
+        getattr(config, "BENDERS_INCUMBENT_EARLY_TERMINATION", True)
+    )
     papadakos_blend = float(getattr(config, "BENDERS_PAPADAKOS_BLEND", 0.5))
     rounding_heur_freq = max(1, int(getattr(config, "BENDERS_ROOT_SEED_ROUND_HEUR_FREQ", 10)))
     progress_bound_floor = float(getattr(config, "BENDERS_PROGRESS_BOUND_FLOOR", -1e50))
@@ -897,9 +1176,15 @@ def solve_bbc(
         mip_gap=mip_gap,
         multi_cut=multi_cut,
         risk_cfg=risk_cfg,
+        lbf_enabled=lbf_enabled,
     )
     master.setParam("LazyConstraints", 1)
     master.setParam("PreCrush", 1)
+    # ── 確保 master MIP log 印到終端機（含 LB/UB/Gap/Time） ──
+    master.setParam("OutputFlag", 1)
+    master.setParam("LogToConsole", 1)
+    display_interval = int(getattr(config, "BENDERS_DISPLAY_INTERVAL", 30))
+    master.setParam("DisplayInterval", display_interval)
     mip_focus = getattr(config, "BENDERS_MIPFOCUS", None)
     if mip_focus is not None:
         master.setParam("MIPFocus", int(mip_focus))
@@ -1015,22 +1300,75 @@ def solve_bbc(
 
         q_by_s: dict[str, float] = {}
         cut_by_s: dict[str, Any] = {}
-        if oracle_executor is None:
-            results = [(s, *oracles[s].evaluate(fs)) for s in S_selected]
-        else:
-            futures = {
-                s: oracle_executor.submit(oracles[s].evaluate, fs)
-                for s in S_selected
-            }
-            results = [(s, *future.result()) for s, future in futures.items()]
 
-        for s, q_s, cut in results:
-            q_by_s[s] = q_s
-            cut_by_s[s] = cut
-        true_ub = objective_from_q(q_by_s) if compute_objective else None
-        evaluation_cache[key] = (true_ub, q_by_s, cut_by_s)
-        cache_misses += 1
-        return true_ub, q_by_s, cut_by_s, False
+        # --- Incumbent early termination ---
+        # When evaluating an integer incumbent (compute_objective=True) and
+        # early termination is enabled, evaluate scenarios one-by-one (or in
+        # small batches with parallel executor).  If partial weighted Q +
+        # first_stage_cost already exceeds best_ub, skip remaining scenarios.
+        # This is safe because Q_s ≥ 0 for all s.
+        early_terminated = False
+        if incumbent_early_term and compute_objective and risk_cfg is None:
+            fs_cost = _first_stage_cost(instance, fs)
+            # Sort scenarios by descending probability to detect fathoming faster
+            sorted_s = sorted(S_selected, key=lambda s: -norm_probs[s])
+            partial_wq = 0.0
+
+            if oracle_executor is None:
+                # Sequential evaluation with early exit
+                for s in sorted_s:
+                    q_s, cut = oracles[s].evaluate(fs)
+                    q_by_s[s] = q_s
+                    cut_by_s[s] = cut
+                    partial_wq += norm_probs[s] * q_s
+                    if fs_cost + partial_wq > best_ub:
+                        early_terminated = True
+                        break
+            else:
+                # With parallel oracles: submit in batches of parallel_oracles
+                for batch_start in range(0, len(sorted_s), parallel_oracles):
+                    batch = sorted_s[batch_start:batch_start + parallel_oracles]
+                    futures = {
+                        s: oracle_executor.submit(oracles[s].evaluate, fs)
+                        for s in batch
+                    }
+                    for s in batch:
+                        q_s, cut = futures[s].result()
+                        q_by_s[s] = q_s
+                        cut_by_s[s] = cut
+                        partial_wq += norm_probs[s] * q_s
+                    if fs_cost + partial_wq > best_ub:
+                        early_terminated = True
+                        break
+
+            if early_terminated:
+                # Don't cache partial evaluations; return inf UB
+                # but still return the cuts we obtained for lazy cut generation
+                cache_misses += 1
+                return float("inf"), q_by_s, cut_by_s, False
+            else:
+                true_ub = fs_cost + partial_wq
+                evaluation_cache[key] = (true_ub, q_by_s, cut_by_s)
+                cache_misses += 1
+                return true_ub, q_by_s, cut_by_s, False
+        else:
+            # Original path: evaluate all scenarios (fractional / risk-averse)
+            if oracle_executor is None:
+                results = [(s, *oracles[s].evaluate(fs)) for s in S_selected]
+            else:
+                futures = {
+                    s: oracle_executor.submit(oracles[s].evaluate, fs)
+                    for s in S_selected
+                }
+                results = [(s, *future.result()) for s, future in futures.items()]
+
+            for s, q_s, cut in results:
+                q_by_s[s] = q_s
+                cut_by_s[s] = cut
+            true_ub = objective_from_q(q_by_s) if compute_objective else None
+            evaluation_cache[key] = (true_ub, q_by_s, cut_by_s)
+            cache_misses += 1
+            return true_ub, q_by_s, cut_by_s, False
 
     def maybe_print_progress(model: gp.Model, where: int) -> None:
         nonlocal last_progress_print
@@ -1488,9 +1826,13 @@ def solve_bbc(
                 best_fs = fs
                 best_q = q_by_s
 
+            # q_by_s may be partial when incumbent early termination fired;
+            # only add lazy cuts for scenarios actually evaluated.
+            evaluated_scenarios = list(q_by_s.keys())
+
             cuts_this_sol = 0
             if multi_cut:
-                for s in S_selected:
+                for s in evaluated_scenarios:
                     theta_val = model.cbGetSolution(mv["theta"][s])
                     q_s = q_by_s[s]
                     tol = config.BENDERS_CUT_VIOL_REL_TOL * max(1.0, abs(q_s))
@@ -1501,11 +1843,11 @@ def solve_bbc(
                         cuts_this_sol += 1
             else:
                 theta_val = model.cbGetSolution(mv["theta"]["__agg__"])
-                aggregate_q = sum(norm_probs[s] * q_by_s[s] for s in S_selected)
+                aggregate_q = sum(norm_probs[s] * q_by_s.get(s, 0) for s in S_selected)
                 tol = config.BENDERS_CUT_VIOL_REL_TOL * max(1.0, abs(aggregate_q))
                 if aggregate_q > theta_val + tol:
                     expr = gp.LinExpr()
-                    for s in S_selected:
+                    for s in evaluated_scenarios:
                         expr += norm_probs[s] * cut_expr(cut_by_s[s], mv, J, H)
                     model.cbLazy(mv["theta"]["__agg__"] >= expr)
                     lazy_cuts_added += 1
@@ -1601,6 +1943,8 @@ def solve_bbc(
         "root_cut_rounds_done": root_cut_rounds_done,
         "use_user_cuts": use_user_cuts,
         "pareto_enabled": pareto_enabled,
+        "lbf_enabled": lbf_enabled,
+        "incumbent_early_termination": incumbent_early_term,
         "parallel_oracles": parallel_oracles,
         "cache_hits": cache_hits,
         "cache_misses": cache_misses,

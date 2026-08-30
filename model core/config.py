@@ -141,6 +141,21 @@ BENDERS_NUMERIC_FOCUS    = 1       # None = 不覆寫 Gurobi 預設
 BENDERS_X_BRANCH_PRIORITY_ENABLED = True
 BENDERS_X_BRANCH_PRIORITY = 10     # 只給 X[j] 設 branching priority；0 = 無優先權
 
+# ── LBF（Lower Bounding Functional Valid Inequalities）──────────────────────
+# 將「平均情境」的完整二階 LP 嵌入 master，令 θ_s 的加權和 ≥ 該 LP 的目標值。
+# 第一輪迭代即可產出結構性下界，大幅加速收斂。
+BENDERS_LBF_ENABLED = True
+
+# ── Incumbent 提前終止 ──────────────────────────────────────────────────────
+# 在評估整數 incumbent 時，若已評估的部分加權 Q 加上一階成本 > best_UB，
+# 即跳過剩餘情境（Q_s ≥ 0 保證安全）。仍對已評估的情境產生 lazy cuts。
+BENDERS_INCUMBENT_EARLY_TERMINATION = True
+
+# ── Gurobi 終端機顯示設定 ─────────────────────────────────────────────────
+# DisplayInterval: 每隔幾秒印一行 node log（含 LB, UB, Gap, Time）
+# 預設 30 秒印一行，跑 2 小時大概印 240 行，不會太吵也不會太少
+BENDERS_DISPLAY_INTERVAL = 30
+
 PERIOD_DURATION_SEC = 1800.0
 ASSUMED_SPEED_MPS = 11.11
 

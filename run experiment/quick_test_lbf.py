@@ -2,7 +2,7 @@
 """
 quick_test_lbf.py  —  快速測試 BBC+WS+RS+UC+Pareto+LBF 單一設定。
 
-只跑「BBC+WS+RS+UC+Pareto+LBF」一種 config，4 種 risk model，3 種 scale，
+只跑「BBC+WS+RS+UC+Pareto+LBF」一種 config，SP+MCVaR 一種 risk model，3 種 scale，
 時間限制 2 小時（7200 秒），J=20 固定，S=50 情境。
 輸出 Excel + CSV 到 experiment result/ 資料夾。
 
@@ -117,9 +117,6 @@ LBF_CONFIG = {
 
 MODEL_SPECS = [
     {"name": "SP+MCVaR",        "kind": "mcvar"},
-    {"name": "DRO-box",         "kind": "dro", "ambiguity_set": "box",         "scope": BOX_SCOPE},
-    {"name": "DRO-ellipsoidal", "kind": "dro", "ambiguity_set": "ellipsoidal", "scope": ELLIPSOIDAL_SCOPE},
-    {"name": "DRO-polyhedral",  "kind": "dro", "ambiguity_set": "polyhedral",  "scope": POLYHEDRAL_SCOPE},
 ]
 MODELS = [spec["name"] for spec in MODEL_SPECS]
 _SPEC_BY_NAME = {spec["name"]: spec for spec in MODEL_SPECS}
@@ -545,7 +542,7 @@ def main() -> None:
     print(f"LBF=True  Incumbent_Early_Term=True")
     print(f"parallel_oracles={int(cfg.BENDERS_PARALLEL_ORACLES)}")
     print(f"DisplayInterval=30s（每 30 秒印一行 Gurobi node log：LB / UB / Gap / Time）")
-    print(f"總共 {n_cases} 個 case（3 scale × 4 model × 1 config）")
+    print(f"總共 {n_cases} 個 case（3 scale × {len(MODELS)} model × 1 config）")
     worst_h = n_cases * (TIME_LIMIT + HARD_TIMEOUT_BUFFER_SEC) / 3600.0
     print(f"最壞情況總時間 ≈ {worst_h:.0f} 小時")
     print(f"CSV   : {csv_path}")

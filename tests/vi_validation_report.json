@@ -1,0 +1,327 @@
+{
+  "timestamp": "2026-09-04T15:42:47",
+  "instance": "tiny (|I|=4 |J|=3 |H|=2 |T|=3 |S|=2)",
+  "seed": 7,
+  "gates_run": [
+    1,
+    2,
+    3
+  ],
+  "samples": 40,
+  "exit_code": 0,
+  "summary": {
+    "VI-1": {
+      "name": "收緊式 (11) 的道路容量係數",
+      "kind": "EXACT",
+      "stage": "第二階段",
+      "gate1": "PASS",
+      "gate2": "PASS",
+      "gate3": "PASS",
+      "overall": "PASS"
+    },
+    "VI-2": {
+      "name": "收緊式 (12) 的道路容量係數",
+      "kind": "EXACT",
+      "stage": "第二階段",
+      "gate1": "PASS",
+      "gate2": "PASS",
+      "gate3": "PASS",
+      "overall": "PASS"
+    },
+    "VI-3": {
+      "name": "合併式 (14) 與式 (26)",
+      "kind": "EXACT",
+      "stage": "第二階段",
+      "gate1": "PASS",
+      "gate2": "PASS",
+      "gate3": "PASS",
+      "overall": "PASS"
+    },
+    "VI-4": {
+      "name": "收緊式 (5) 的醫護配置上界",
+      "kind": "OPT",
+      "stage": "第一階段",
+      "gate1": "PASS",
+      "gate2": "—",
+      "gate3": "PASS",
+      "overall": "PASS"
+    },
+    "VI-5": {
+      "name": "開站使用連結",
+      "kind": "OPT",
+      "stage": "第一階段",
+      "gate1": "PASS",
+      "gate2": "—",
+      "gate3": "PASS",
+      "overall": "PASS"
+    },
+    "VI-6": {
+      "name": "θ_s 的情境下界",
+      "kind": "RELAX",
+      "stage": "master",
+      "gate1": "—",
+      "gate2": "PASS",
+      "gate3": "—",
+      "overall": "PASS"
+    },
+    "VI-7": {
+      "name": "θ_s 的情境上界",
+      "kind": "OPT",
+      "stage": "master",
+      "gate1": "—",
+      "gate2": "PASS",
+      "gate3": "PASS",
+      "overall": "PASS"
+    },
+    "VI-8": {
+      "name": "每情境彙總鬆弛",
+      "kind": "RELAX",
+      "stage": "master",
+      "gate1": "—",
+      "gate2": "PASS",
+      "gate3": "—",
+      "overall": "PASS"
+    },
+    "COMBO": {
+      "name": "VI-1..VI-5 五條同時開啟",
+      "gate1": "PASS",
+      "overall": "PASS"
+    }
+  },
+  "gate1": {
+    "VI-1": {
+      "obj": 539684.2784032926,
+      "abs_delta": 0.0,
+      "rel_delta": 0.0,
+      "touched": {
+        "changed": 71,
+        "added": 0,
+        "removed": 0
+      },
+      "vars": 519,
+      "constrs": 457,
+      "status": "OPTIMAL",
+      "result": "PASS"
+    },
+    "VI-2": {
+      "obj": 539684.2784032926,
+      "abs_delta": 0.0,
+      "rel_delta": 0.0,
+      "touched": {
+        "changed": 32,
+        "added": 0,
+        "removed": 0
+      },
+      "vars": 519,
+      "constrs": 457,
+      "status": "OPTIMAL",
+      "result": "PASS"
+    },
+    "VI-3": {
+      "obj": 539684.2784032926,
+      "abs_delta": 0.0,
+      "rel_delta": 0.0,
+      "touched": {
+        "changed": 9,
+        "added": 0,
+        "removed": 12
+      },
+      "vars": 519,
+      "constrs": 445,
+      "status": "OPTIMAL",
+      "result": "PASS"
+    },
+    "VI-4": {
+      "obj": 539684.2784032926,
+      "abs_delta": 0.0,
+      "rel_delta": 0.0,
+      "touched": {
+        "changed": 3,
+        "added": 0,
+        "removed": 0
+      },
+      "vars": 519,
+      "constrs": 457,
+      "status": "OPTIMAL",
+      "result": "PASS"
+    },
+    "VI-5": {
+      "obj": 539684.2784032926,
+      "abs_delta": 0.0,
+      "rel_delta": 0.0,
+      "touched": {
+        "changed": 0,
+        "added": 6,
+        "removed": 0
+      },
+      "vars": 519,
+      "constrs": 463,
+      "status": "OPTIMAL",
+      "result": "PASS"
+    },
+    "COMBO": {
+      "obj": 539684.2784032926,
+      "abs_delta": 0.0,
+      "rel_delta": 0.0,
+      "touched": {
+        "changed": 115,
+        "added": 6,
+        "removed": 12
+      },
+      "vars": 519,
+      "constrs": 451,
+      "status": "OPTIMAL",
+      "result": "PASS"
+    }
+  },
+  "gate2": {
+    "VI-1": {
+      "checks": 84,
+      "planned": 84,
+      "violations": 0,
+      "max_violation": 0.0,
+      "min_slack": -8.37108160567368e-14,
+      "worst_at": "",
+      "result": "PASS"
+    },
+    "VI-2": {
+      "checks": 84,
+      "planned": 84,
+      "violations": 0,
+      "max_violation": 0.0,
+      "min_slack": 0.2927612775245034,
+      "worst_at": "",
+      "result": "PASS"
+    },
+    "VI-3": {
+      "checks": 84,
+      "planned": 84,
+      "violations": 0,
+      "max_violation": 0.0,
+      "min_slack": 0.0,
+      "worst_at": "",
+      "result": "PASS"
+    },
+    "VI-6": {
+      "checks": 84,
+      "planned": 84,
+      "violations": 0,
+      "max_violation": 0.0,
+      "min_slack": 0.0,
+      "worst_at": "",
+      "result": "PASS"
+    },
+    "VI-7": {
+      "checks": 84,
+      "planned": 84,
+      "violations": 0,
+      "max_violation": 0.0,
+      "min_slack": -4.656612873077393e-10,
+      "worst_at": "",
+      "result": "PASS"
+    },
+    "VI-8": {
+      "checks": 84,
+      "planned": 84,
+      "violations": 0,
+      "max_violation": 0.0,
+      "min_slack": 0.0,
+      "worst_at": "",
+      "result": "PASS"
+    }
+  },
+  "gate3": {
+    "VI-1": {
+      "violations": 0,
+      "max_violation": 0.0,
+      "hard": true,
+      "note": "",
+      "result": "PASS"
+    },
+    "VI-2": {
+      "violations": 0,
+      "max_violation": 0.0,
+      "hard": true,
+      "note": "",
+      "result": "PASS"
+    },
+    "VI-3": {
+      "violations": 0,
+      "max_violation": 0.0,
+      "hard": true,
+      "note": "",
+      "result": "PASS"
+    },
+    "VI-4": {
+      "violations": 0,
+      "max_violation": 0.0,
+      "hard": true,
+      "note": "",
+      "result": "PASS"
+    },
+    "VI-5": {
+      "violations": 0,
+      "max_violation": 0.0,
+      "hard": true,
+      "note": "",
+      "result": "PASS"
+    },
+    "VI-7": {
+      "violations": 0,
+      "max_violation": 0.0,
+      "hard": true,
+      "note": "",
+      "result": "PASS"
+    }
+  },
+  "self_test": {
+    "VI-1": {
+      "sabotage": "式 (11′) 右手邊 ×0.5（過度收緊）",
+      "gate": 1,
+      "got": "FAIL",
+      "caught": true
+    },
+    "VI-2": {
+      "sabotage": "式 (12′) 右手邊 ×0.5（過度收緊）",
+      "gate": 1,
+      "got": "FAIL",
+      "caught": true
+    },
+    "VI-3": {
+      "sabotage": "合併後右手邊 ×0.5（過度收緊）",
+      "gate": 1,
+      "got": "FAIL",
+      "caught": true
+    },
+    "VI-4": {
+      "sabotage": "V_j 上界壓成 1（切掉最佳解）",
+      "gate": 1,
+      "got": "FAIL",
+      "caught": true
+    },
+    "VI-5": {
+      "sabotage": "改成 (nv+1)·X_j ≤ V_j（強到開不了站）",
+      "gate": 1,
+      "got": "FAIL",
+      "caught": true
+    },
+    "VI-6": {
+      "sabotage": "下界 ×1.5（灌水，會超過真實 Q）",
+      "gate": 2,
+      "got": "FAIL",
+      "caught": true
+    },
+    "VI-7": {
+      "sabotage": "上界 ×0.5（縮水，會低於真實 Q）",
+      "gate": 2,
+      "got": "FAIL",
+      "caught": true
+    },
+    "VI-8": {
+      "sabotage": "彙總界 ×2.0（灌水）",
+      "gate": 2,
+      "got": "FAIL",
+      "caught": true
+    }
+  }
+}

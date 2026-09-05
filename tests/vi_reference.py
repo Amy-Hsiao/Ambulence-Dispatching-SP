@@ -284,17 +284,29 @@ APPLY = {"VI-1": apply_vi1, "VI-2": apply_vi2, "VI-3": apply_vi3,
 
 
 def build_extensive(inst, vis=(), time_limit=600.0, mip_gap=0.0, env=None,
-                    name="validate"):
-    """建 extensive form 並套用指定的 VI（vis 為 VI 編號的序列）。"""
+                    name="validate", use_project_vi=False):
+    """建 extensive form。
+
+    use_project_vi=False（預設）
+        以 vi_cfg={"all": False} 建出「乾淨」的模型，再由本模組的 apply_* 套用
+        指定的 VI。這是驗證的主路徑 —— 對照組必須真的沒有任何 VI，否則基準線
+        本身就被污染了。
+    use_project_vi=True
+        改讓 model core 依 config.VI_* 自己加 VI，本模組一條都不套。
+        用來比對「參考實作」與「專案實作」是否給出同一個模型。
+    """
     d = unpack(inst)
     model, v = model_core.build_gurobi_model(
         d["I"], d["J"], d["H"], d["L"], d["Ltr"], d["T"], d["S"],
         d["p"], d["sd"], d["sd"]["probability"],
         d["cap_ij"], d["cap_jh"], d["cost_ij"], d["cost_jh"],
         model_name=name, time_limit=time_limit, mip_gap=mip_gap, env=env,
+        vi_cfg=(None if use_project_vi else {"all": False}),
     )
     model.setParam("OutputFlag", 0)
     touched = dict(changed=0, added=0, removed=0)
+    if use_project_vi:
+        return model, v, touched
     for vid in vis:
         if vid not in APPLY:
             raise ValueError(f"{vid} 不是可套用到 extensive form 的 VI")
@@ -330,7 +342,7 @@ def true_Q(inst, x, s, env=None, relax_first_stage=False, time_limit=300.0,
         d["p"], sub_sd, {s: 1.0},
         d["cap_ij"], d["cap_jh"], d["cost_ij"], d["cost_jh"],
         model_name=f"Q_{s}", time_limit=time_limit, mip_gap=0.0,
-        fixed_first_stage=x, env=env,
+        fixed_first_stage=x, env=env, vi_cfg={"all": False},
     )
     model.setParam("OutputFlag", 0)
     if relax_first_stage:

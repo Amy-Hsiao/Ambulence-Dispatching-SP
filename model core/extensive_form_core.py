@@ -18,10 +18,81 @@ probabilities = {s_label: 1.0}.
 """
 from __future__ import annotations
 
+import math
 from typing import Any
 
 import gurobipy as gp
 from gurobipy import GRB
+
+
+# ====================================================================== #
+# 有效不等式 Valid Inequalities                                           #
+#                                                                        #
+# 編號與 docs/有效不等式_實作規格.docx 完全一致；正確性驗證程式為            #
+# tests/validate_vi.py（三關 + 八條反向對照）。開關在 config.py 的 VI_* 。 #
+#                                                                        #
+# 本檔負責 VI-1 ~ VI-5（作用於模型本身）；VI-6 ~ VI-8 只在 Benders master  #
+# 出現，實作於 lshaped_core.py。                                          #
+# ====================================================================== #
+VI_KEYS = ("VI-1", "VI-2", "VI-3", "VI-4", "VI-5", "VI-6", "VI-7", "VI-8")
+_VI_CONFIG_NAMES = {
+    "VI-1": "VI_1_ROADCAP_IJ", "VI-2": "VI_2_ROADCAP_JH",
+    "VI-3": "VI_3_HOSP_MERGE", "VI-4": "VI_4_STAFF_UB",
+    "VI-5": "VI_5_OPEN_USE",   "VI-6": "VI_6_THETA_LB",
+    "VI-7": "VI_7_THETA_UB",   "VI-8": "VI_8_AGG_RELAX",
+}
+
+
+def vi_flags(vi_cfg: dict[str, Any] | None = None) -> dict[str, bool]:
+    """解析八條 VI 的開關。
+
+    vi_cfg=None            → 全部讀 config.VI_*（正常執行路徑）
+    vi_cfg={"VI-3": False} → 只覆寫該條，其餘仍讀 config（ablation 用）
+    vi_cfg={"all": False}  → 全部關閉（驗證程式的基準線）
+    """
+    try:
+        import config as _cfg
+    except ImportError:            # 不在 model core 的 sys.path 下也要能 import
+        _cfg = None
+    master_on = bool(getattr(_cfg, "VI_ENABLED", False)) if _cfg is not None else False
+    out = {k: (master_on and bool(getattr(_cfg, _VI_CONFIG_NAMES[k], False)))
+           for k in VI_KEYS}
+    if vi_cfg:
+        if "all" in vi_cfg:
+            out = {k: bool(vi_cfg["all"]) for k in VI_KEYS}
+        for k in VI_KEYS:
+            if k in vi_cfg:
+                out[k] = bool(vi_cfg[k])
+    return out
+
+
+def vi_cumulative_demand(scenario_data: dict[str, Any], s: str,
+                         I: list[str], L: list[str], T: list[str]):
+    """{(i, t): Σ_{l∈L} Σ_{r=1}^{t} ξ_ilrs} —— VI-1 收緊係數所需的累積傷患數。"""
+    out = {}
+    for i in I:
+        run = 0.0
+        for t in T:
+            run += sum(scenario_data["demand"][s][t][i].get(l, 0.0) for l in L)
+            out[(i, t)] = run
+    return out
+
+
+def vi_staff_ub(params: dict[str, Any], j: str, L: list[str]) -> float:
+    """VI-4 的收緊係數 min{ v̄_j, ⌈Σ_{l∈L} k_jl/α_l⌉ }。
+
+    由 (22)(23) 得 TRT_jlt ≤ k_jl X_j，代入 (24) 可知 V_j 的實質需求恆不超過
+    Σ_l k_jl/α_l；V_j 為整數故取上取整。務必是 ceil 而非 floor —— floor 會
+    切掉「需求落在兩個整數之間」時唯一夠用的那個整數配置。
+    """
+    need = sum(params["ccp_physical_capacity_by_severity"][l]
+               / params["staff_treatment_rate_by_severity"][l] for l in L)
+    return min(float(params["ccp_staff_upper_bound"][j]), float(math.ceil(need - 1e-9)))
+
+
+def vi_ccp_transfer_capacity(params: dict[str, Any], L_transfer: list[str]) -> float:
+    """VI-2 的收緊係數 Σ_{l∈L^Amb} k_jl（本模型的 k_jl 對 j 為常數）。"""
+    return sum(params["ccp_physical_capacity_by_severity"][l] for l in L_transfer)
 
 
 def build_gurobi_model(
@@ -43,6 +114,7 @@ def build_gurobi_model(
     time_limit: float = 3600.0,
     mip_gap: float = 0.01,
     fixed_first_stage: dict[str, Any] | None = None,
+    vi_cfg: dict[str, Any] | None = None,
     env: gp.Env | None = None,
 ) -> tuple[gp.Model, dict[str, Any]]:
     """Build and return a (model, vars_dict) pair.
@@ -54,6 +126,9 @@ def build_gurobi_model(
         supplied values by setting lb == ub.  Used for EEV evaluation.
         Expected keys: "X" ({j: 0|1}), "V" ({j: int}), "U" ({j: int}),
                        "Y" ({(h, j): int}).
+    vi_cfg
+        有效不等式開關；None = 讀 config.VI_*。詳見 vi_flags()。
+        全部關閉時本函式建出的模型與加入 VI 之前逐位相同。
     env
         Optional dedicated Gurobi environment（平行求解時每執行緒各一個）。
         None = 預設環境，行為與舊版完全相同。純管線參數，不影響模型邏輯。
@@ -62,6 +137,20 @@ def build_gurobi_model(
     model.setParam("OutputFlag", 0)
     model.setParam("TimeLimit", time_limit)
     model.setParam("MIPGap", mip_gap)
+
+    # ------------------------------------------------------------------ #
+    # 有效不等式開關與預先計算                                              #
+    # ------------------------------------------------------------------ #
+    _vi = vi_flags(vi_cfg)
+    if fixed_first_stage is not None:
+        # 第一階段被外部固定時（Benders 的 ScenarioOracle、EEV 評估），
+        # VI-4 與 VI-5 一律關閉。這兩條是「決定 x 的時候」才成立的最佳性論證，
+        # 硬加在一個外部給定的 x 上會讓模型不可行 —— 例如 master 的取整啟發式
+        # 交來 X_j=1, V_j=0 的點，VI-5 會把它判成無解，整個 Benders 迴圈就斷了。
+        _vi = dict(_vi); _vi["VI-4"] = False; _vi["VI-5"] = False
+    _vi_tr_cap = vi_ccp_transfer_capacity(params, L_transfer) if _vi["VI-2"] else 0.0
+    _vi_cum = ({s: vi_cumulative_demand(scenario_data, s, I, L, T) for s in S}
+               if _vi["VI-1"] else {})
 
     # ------------------------------------------------------------------ #
     # First-stage variables                                                #
@@ -148,12 +237,20 @@ def build_gurobi_model(
             f"Hosp_Supply_{h}",
         )
     for j in J:
-        model.addConstr(V[j] <= params["ccp_staff_upper_bound"][j]     * X[j], f"Logic_V_{j}")
+        # VI-4：(5) → (5′)，把 X_j 的係數由 v̄_j 收緊為 min{ v̄_j, ⌈Σ_l k_jl/α_l⌉ }
+        _v_ub = (vi_staff_ub(params, j, L) if _vi["VI-4"]
+                 else params["ccp_staff_upper_bound"][j])
+        model.addConstr(V[j] <= _v_ub * X[j], f"Logic_V_{j}")
         model.addConstr(U[j] <= params["ccp_ambulance_upper_bound"][j] * X[j], f"Logic_U_{j}")
         model.addConstr(
             gp.quicksum(Y[h, j] for h in H) <= params["ccp_supply_upper_bound"][j] * X[j],
             f"Logic_Y_{j}",
         )
+        if _vi["VI-5"]:
+            # VI-5：開了站就必須配置醫護與物資。否則該站在所有情境中完全不會被
+            # 使用（(24)(25) 會把 TRT/REG 壓成 0），而關掉它可省下 f_j > 0。
+            model.addConstr(X[j] <= V[j], f"VI5_staff_{j}")
+            model.addConstr(X[j] <= gp.quicksum(Y[h, j] for h in H), f"VI5_supply_{j}")
 
     # ------------------------------------------------------------------ #
     # Scenario-indexed constraints                                         #
@@ -167,18 +264,26 @@ def build_gurobi_model(
             # Road capacity i→j
             for i in I:
                 for j in J:
+                    _coef = cap_ij[i][j] * sd["road_availability_ij"][s][i][j][t]
+                    if _vi["VI-1"]:
+                        # (11) → (11′)：災區 i 到第 t 期為止累積產生的傷患數也是
+                        # 有效上界（由 (15)(16) 與 RM ≥ 0 推得），取兩者較小者。
+                        _coef = min(_coef, _vi_cum[s][(i, t)])
                     model.addConstr(
-                        gp.quicksum(FI[s, i, j, l, t] for l in L)
-                        <= cap_ij[i][j] * sd["road_availability_ij"][s][i][j][t] * X[j],
+                        gp.quicksum(FI[s, i, j, l, t] for l in L) <= _coef * X[j],
                         f"RoadCap_IJ_{s}_{i}_{j}_{t}",
                     )
 
             # Road capacity j→h
             for j in J:
                 for h in H:
+                    _coef = cap_jh[j][h] * sd["road_availability_jh"][s][j][h][t]
+                    if _vi["VI-2"]:
+                        # (12) → (12′)：單期能送出 CCP j 的人數不超過該站需後送
+                        # 嚴重度的床位總和 Σ_{l∈L^Amb} k_jl（由 (19)(18)(21)(22) 推得）。
+                        _coef = min(_coef, _vi_tr_cap)
                     model.addConstr(
-                        gp.quicksum(FO[s, j, h, l, t] for l in L_transfer)
-                        <= cap_jh[j][h] * sd["road_availability_jh"][s][j][h][t] * X[j],
+                        gp.quicksum(FO[s, j, h, l, t] for l in L_transfer) <= _coef * X[j],
                         f"RoadCap_JH_{s}_{j}_{h}_{t}",
                     )
 
@@ -192,17 +297,19 @@ def build_gurobi_model(
 
             # Hospital receiving capacity
             for h in H:
-                model.addConstr(
-                    gp.quicksum(FO[s, j, h, l, t] for j in J for l in L_transfer)
-                    <= params["hospital_ambulance_casualty_capacity"]
-                       * params["hospital_ambulance_fleet"][h],
-                    f"Hosp_AmbCap_{s}_{h}_{t}",
-                )
-                model.addConstr(
-                    gp.quicksum(FO[s, j, h, l, t] for j in J for l in L_transfer)
-                    <= sd["hospital_receiving_capacity"][s][h][t],
-                    f"Hosp_ReceiveCap_{s}_{h}_{t}",
-                )
+                _eta_b = (params["hospital_ambulance_casualty_capacity"]
+                          * params["hospital_ambulance_fleet"][h])
+                _hcap = sd["hospital_receiving_capacity"][s][h][t]
+                _out_h = gp.quicksum(FO[s, j, h, l, t]
+                                     for j in J for l in L_transfer)
+                if _vi["VI-3"]:
+                    # VI-3：(14) 與 (26) 的左手邊逐字相同，同一個左式受兩個上界
+                    # 拘束等價於受較小者拘束，故合併為一條（省 |H|·|T|·|S| 條）。
+                    model.addConstr(_out_h <= min(_eta_b, _hcap),
+                                    f"Hosp_AmbCap_{s}_{h}_{t}")
+                else:
+                    model.addConstr(_out_h <= _eta_b, f"Hosp_AmbCap_{s}_{h}_{t}")
+                    model.addConstr(_out_h <= _hcap, f"Hosp_ReceiveCap_{s}_{h}_{t}")
 
             # Remaining patients at disaster area
             for i in I:
@@ -280,6 +387,7 @@ def build_gurobi_model(
         # 供 extensive-form 風險入口重用（純附加，不改目標式/限制式）
         "first_stage_cost_expr": first_stage_cost,
         "scenario_cost_expr": scenario_cost_expr,
+        "vi_flags": _vi,
     }
     return model, vars_dict
 

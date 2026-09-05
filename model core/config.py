@@ -151,6 +151,36 @@ BENDERS_LBF_ENABLED = True
 # 即跳過剩餘情境（Q_s ≥ 0 保證安全）。仍對已評估的情境產生 lazy cuts。
 BENDERS_INCUMBENT_EARLY_TERMINATION = True
 
+# ── 有效不等式 Valid Inequalities ─────────────────────────────────────────
+# 編號與 docs/有效不等式_實作規格.docx 完全一致；正確性驗證程式為
+# tests/validate_vi.py（三關 + 反向對照）。
+#
+# 全部設 False 時，模型與加入 VI 之前逐位相同 —— 這是 ablation 的基準線，
+# 也是 tests/validate_vi.py 關卡一在比對的東西。
+#
+# 型別（決定論文中要證明什麼）：
+#   [EXACT] 等價重構    不切掉任何可行解
+#   [OPT]   保最佳性    可能切掉可行解，但保證留下至少一個最佳解
+#   [RELAX] 鬆弛下界    對所有可行解恆成立
+VI_ENABLED       = True   # 總開關；False 時以下八條一律視為關閉
+
+VI_1_ROADCAP_IJ  = True   # [EXACT] 收緊式 (11) 的道路容量係數      第二階段
+VI_2_ROADCAP_JH  = True   # [EXACT] 收緊式 (12) 的道路容量係數      第二階段
+VI_3_HOSP_MERGE  = True   # [EXACT] 合併式 (14) 與式 (26)           第二階段
+VI_4_STAFF_UB    = True   # [OPT]   收緊式 (5) 的醫護配置上界        第一階段
+VI_5_OPEN_USE    = True   # [OPT]   開站使用連結 X_j ≤ V_j 等        第一階段
+VI_6_THETA_LB    = True   # [RELAX] θ_s 的情境下界                  master
+VI_7_THETA_UB    = True   # [OPT]   θ_s 的情境上界                  master
+VI_8_AGG_RELAX   = True   # [RELAX] 每情境彙總鬆弛（十條 + 連結式）   master
+
+# VI-1/2/3 也套用到 master 內嵌的 LBF 區塊（那裡複製了整組二階限制式）。
+# 屬 EXACT，不影響 Jensen 下界的合法性，只是把 big-M 收緊。
+VI_APPLY_TO_LBF  = True
+
+# VI-6 需要每情境解一個 LP 求 q̲_s = Q(x̄; ω^s)。這是求解前的一次性成本，
+# 超過此時限就放棄該情境的下界（VI-6 對該情境不加，其餘照常）。
+VI_THETA_LB_TIME_LIMIT = 120.0
+
 # ── Gurobi 終端機顯示設定 ─────────────────────────────────────────────────
 # DisplayInterval: 每隔幾秒印一行 node log（含 LB, UB, Gap, Time）
 # 預設 30 秒印一行，跑 2 小時大概印 240 行，不會太吵也不會太少

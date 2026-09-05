@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-09-04T15:42:47",
+  "timestamp": "2026-09-05T03:00:01",
   "instance": "tiny (|I|=4 |J|=3 |H|=2 |T|=3 |S|=2)",
   "seed": 7,
   "gates_run": [
@@ -86,6 +86,11 @@
       "name": "VI-1..VI-5 五條同時開啟",
       "gate1": "PASS",
       "overall": "PASS"
+    },
+    "PROJECT": {
+      "name": "config 實作（專案程式）",
+      "gate1": "PASS",
+      "overall": "PASS"
     }
   },
   "gate1": {
@@ -167,6 +172,20 @@
         "changed": 115,
         "added": 6,
         "removed": 12
+      },
+      "vars": 519,
+      "constrs": 451,
+      "status": "OPTIMAL",
+      "result": "PASS"
+    },
+    "PROJECT": {
+      "obj": 539684.2784032926,
+      "abs_delta": 0.0,
+      "rel_delta": 0.0,
+      "touched": {
+        "changed": 0,
+        "added": 0,
+        "removed": 0
       },
       "vars": 519,
       "constrs": 451,

@@ -145,6 +145,21 @@ def _embed_lbf_in_master(
 
     avg = _compute_average_scenario_data(instance, S_selected, norm_probs)
 
+    # LBF 區塊複製了整組二階限制式，VI-1/2/3 同樣適用（都是 EXACT，只收緊
+    # big-M，不影響 Jensen 下界的合法性）。以平均情境資料計算收緊係數。
+    _vi_lbf = (model_core.vi_flags(None)
+               if getattr(config, "VI_APPLY_TO_LBF", False)
+               else {k: False for k in model_core.VI_KEYS})
+    _lbf_cum = {}
+    if _vi_lbf["VI-1"]:
+        for i in I:
+            run = 0.0
+            for t in T:
+                run += sum(avg["demand"][t][i].get(l, 0.0) for l in L)
+                _lbf_cum[(i, t)] = run
+    _lbf_tr_cap = (model_core.vi_ccp_transfer_capacity(params, L_transfer)
+                   if _vi_lbf["VI-2"] else 0.0)
+
     X, V, U, Y = mv["X"], mv["V"], mv["U"], mv["Y"]
 
     # ----- average-scenario second-stage continuous variables ----- #
@@ -191,18 +206,22 @@ def _embed_lbf_in_master(
         # Road capacity i→j
         for i in I:
             for j in J:
+                _c = cap_ij[i][j] * avg["road_availability_ij"][i][j][t]
+                if _vi_lbf["VI-1"]:
+                    _c = min(_c, _lbf_cum[(i, t)])
                 m.addConstr(
-                    gp.quicksum(FI_a[i, j, l, t] for l in L)
-                    <= cap_ij[i][j] * avg["road_availability_ij"][i][j][t] * X[j],
+                    gp.quicksum(FI_a[i, j, l, t] for l in L) <= _c * X[j],
                     f"LBF_RoadCap_IJ_{i}_{j}_{t}",
                 )
 
         # Road capacity j→h
         for j in J:
             for h in H:
+                _c = cap_jh[j][h] * avg["road_availability_jh"][j][h][t]
+                if _vi_lbf["VI-2"]:
+                    _c = min(_c, _lbf_tr_cap)
                 m.addConstr(
-                    gp.quicksum(FO_a[j, h, l, t] for l in L_transfer)
-                    <= cap_jh[j][h] * avg["road_availability_jh"][j][h][t] * X[j],
+                    gp.quicksum(FO_a[j, h, l, t] for l in L_transfer) <= _c * X[j],
                     f"LBF_RoadCap_JH_{j}_{h}_{t}",
                 )
 
@@ -216,17 +235,15 @@ def _embed_lbf_in_master(
 
         # Hospital receiving capacity
         for h in H:
-            m.addConstr(
-                gp.quicksum(FO_a[j, h, l, t] for j in J for l in L_transfer)
-                <= params["hospital_ambulance_casualty_capacity"]
-                   * params["hospital_ambulance_fleet"][h],
-                f"LBF_Hosp_AmbCap_{h}_{t}",
-            )
-            m.addConstr(
-                gp.quicksum(FO_a[j, h, l, t] for j in J for l in L_transfer)
-                <= avg["hospital_receiving_capacity"][h][t],
-                f"LBF_Hosp_ReceiveCap_{h}_{t}",
-            )
+            _eta_b = (params["hospital_ambulance_casualty_capacity"]
+                      * params["hospital_ambulance_fleet"][h])
+            _hc = avg["hospital_receiving_capacity"][h][t]
+            _o = gp.quicksum(FO_a[j, h, l, t] for j in J for l in L_transfer)
+            if _vi_lbf["VI-3"]:
+                m.addConstr(_o <= min(_eta_b, _hc), f"LBF_Hosp_AmbCap_{h}_{t}")
+            else:
+                m.addConstr(_o <= _eta_b, f"LBF_Hosp_AmbCap_{h}_{t}")
+                m.addConstr(_o <= _hc, f"LBF_Hosp_ReceiveCap_{h}_{t}")
 
         # Remaining patients at disaster area
         for i in I:
@@ -312,7 +329,8 @@ class ScenarioOracle:
 
     def __init__(self, instance: dict[str, Any], s: str,
                  time_limit: float = 300.0, threads: int = 1,
-                 env: gp.Env | None = None):
+                 env: gp.Env | None = None,
+                 vi_cfg: dict[str, Any] | None = None):
         sets = instance["sets"]
         self.s   = s
         self.I   = sets["I"]
@@ -349,6 +367,7 @@ class ScenarioOracle:
             time_limit=time_limit,
             mip_gap=1e-9,          # LP：gap 參數無作用，設小值以防萬一
             fixed_first_stage=zero_fs,
+            vi_cfg=vi_cfg,
             env=env,
         )
         # 一階變數鬆弛為連續（值仍被 lb=ub 固定）→ 模型成為純 LP → 才有 RC/對偶
@@ -447,12 +466,235 @@ class ScenarioOracle:
 # Phase 0 — Master builder（一階限制式照 extensive_form_core 抄寫）        #
 # ====================================================================== #
 
+# ====================================================================== #
+# 有效不等式 VI-6 / VI-7 / VI-8（只在 Benders master 出現）               #
+#                                                                        #
+# 編號與 docs/有效不等式_實作規格.docx 一致；驗證程式 tests/validate_vi.py。#
+# VI-1 ~ VI-5 作用於模型本身，實作於 extensive_form_core.py（master 的     #
+# 一階限制式與 oracle 都會經過那裡）。                                     #
+# ====================================================================== #
+
+def _vi_theta_upper(instance: dict[str, Any], s: str) -> float:
+    """VI-7：q̄_s = Q(0; ω^s) = Σ_i Σ_l Σ_t ρ_l ( Σ_{r=1}^{t} ξ_ilrs )。
+
+    第一階段全為 0 時 (11)(12) 逼得 FI = FO = 0，一路推下去只剩 (10) 的第一項，
+    故有閉式解，不需求解任何 LP。
+    """
+    sets = instance["sets"]
+    rho = instance["deterministic_parameters"]["disaster_area_remaining_penalty_by_severity"]
+    dem = instance["scenario_data"]["demand"][s]
+    tot = 0.0
+    for i in sets["I"]:
+        for l in sets["L"]:
+            cum = 0.0
+            for t in sets["T"]:
+                cum += dem[t][i].get(l, 0.0)
+                tot += rho[l] * cum
+    return tot
+
+
+def _vi_theta_lower(instance: dict[str, Any], s: str, time_limit: float) -> float | None:
+    """VI-6：q̲_s = Q(x̄; ω^s)，x̄ 為第一階段變數的逐分量上界向量。
+
+    Q(·; ω^s) 對 x 逐分量非增（一階變數在二階限制式中只以非負係數出現在右手邊），
+    故 Q(x̄) 是所有第一階段可行解的下界。x̄ 本身違反資源池限制式 (2)(3)(4)，
+    計算時把一階限制式的右手邊放寬至 +∞ —— Q 的定義只把 x 當右手邊參數，
+    並不要求 x 屬於第一階段可行域。
+
+    求解失敗（超時等）時回傳 None，呼叫端跳過該情境的下界。
+    """
+    sets = instance["sets"]
+    J, H = sets["J"], sets["H"]
+    params = instance["deterministic_parameters"]
+    sd_full = instance["scenario_data"]
+    x_bar = {
+        "X": {j: 1 for j in J},
+        "V": {j: int(math.floor(params["ccp_staff_upper_bound"][j])) for j in J},
+        "U": {j: int(math.floor(params["ccp_ambulance_upper_bound"][j])) for j in J},
+        "Y": {(h, j): int(math.floor(min(params["hospital_supply_upper_bound"][h],
+                                         params["ccp_supply_upper_bound"][j])))
+              for h in H for j in J},
+    }
+    sub_sd = {k: {s: sd_full[k][s]} for k in
+              ("demand", "road_availability_ij", "road_availability_jh",
+               "hospital_receiving_capacity")}
+    m = None
+    try:
+        m, _v = model_core.build_gurobi_model(
+            sets["I"], J, H, sets["L"], sets["L_transfer"], sets["T"], [s],
+            params, sub_sd, {s: 1.0},
+            instance["road_capacity"]["cap_ij"], instance["road_capacity"]["cap_jh"],
+            instance["transport_cost"]["cost_ij"], instance["transport_cost"]["cost_jh"],
+            model_name=f"VI6_lb[{s}]", time_limit=time_limit, mip_gap=0.0,
+            fixed_first_stage=x_bar,
+        )
+        m.setParam("OutputFlag", 0)
+        m.update()
+        for c in m.getConstrs():
+            if c.ConstrName.startswith(("Total_Staff", "Total_CCP_Ambulances",
+                                        "Hosp_Supply_", "Logic_V_", "Logic_U_",
+                                        "Logic_Y_")):
+                c.RHS = GRB.INFINITY
+        m.optimize()
+        if m.status != GRB.OPTIMAL:
+            return None
+        first_stage_cost = (
+            sum(params["ccp_fixed_opening_cost"][j] * x_bar["X"][j] for j in J)
+            + params["staff_unit_assignment_cost"] * sum(x_bar["V"].values())
+            + params["ccp_ambulance_unit_assignment_cost"] * sum(x_bar["U"].values())
+            + sum(params["supply_allocation_cost_from_hospital_to_ccp"][h][j]
+                  * x_bar["Y"][(h, j)] for h in H for j in J)
+        )
+        return m.ObjVal - first_stage_cost
+    except gp.GurobiError:
+        return None
+    finally:
+        if m is not None:
+            m.dispose()
+
+
+def _embed_vi8_in_master(m: gp.Model, mv: dict[str, Any], instance: dict[str, Any],
+                         S_selected: list[str], norm_probs: dict[str, float],
+                         multi_cut: bool) -> int:
+    """VI-8：把第二階段限制式對空間索引 i, j, h 加總後的投影塞進 master。
+
+    每情境只需 (2|L| + 2|L^Amb|)·|T| 個連續變數 —— 文件中寫成
+    Σ_{i∈I} Σ_{j∈J} FI_ijlt(s) 的求和式，程式中就是這裡的一個變數。
+    式子編號 (8.1)–(8.10) 與規格書 2.8 節一一對應。
+
+    回傳新增的限制式條數。
+    """
+    sets = instance["sets"]
+    I, J, H = sets["I"], sets["J"], sets["H"]
+    L, Ltr, T = sets["L"], sets["L_transfer"], sets["T"]
+    params = instance["deterministic_parameters"]
+    sd = instance["scenario_data"]
+    cap_ij = instance["road_capacity"]["cap_ij"]
+    cap_jh = instance["road_capacity"]["cap_jh"]
+    cost_ij = instance["transport_cost"]["cost_ij"]
+    cost_jh = instance["transport_cost"]["cost_jh"]
+    X, V, U, Y = mv["X"], mv["V"], mv["U"], mv["Y"]
+    theta = mv["theta"]
+
+    tau = {l: int(params["treatment_duration_by_severity"][l]) for l in L}
+    alpha = params["staff_treatment_rate_by_severity"]
+    beta = params["supply_consumption_by_severity"]
+    rho = params["disaster_area_remaining_penalty_by_severity"]
+    delta = params["ccp_waiting_penalty_by_severity"]
+    kap = params["ccp_ambulance_casualty_capacity"]
+    eta = params["hospital_ambulance_casualty_capacity"]
+    kcap = {l: params["ccp_physical_capacity_by_severity"][l] for l in L}
+    kcap_tr = sum(kcap[l] for l in Ltr)
+    nT = len(T)
+
+    sumX = gp.quicksum(X[j] for j in J)
+    sumV = gp.quicksum(V[j] for j in J)
+    sumU = gp.quicksum(U[j] for j in J)
+    sumY = gp.quicksum(Y[h, j] for h in H for j in J)
+    min_tij = min(cost_ij[i][j] for i in I for j in J)
+    min_tjh = min(cost_jh[j][h] for j in J for h in H)
+
+    def window(l, ti):
+        """(18) 的滾動窗 r = max(1, t−τ_l+1) … t，以 0-based 索引表示。"""
+        return range(max(0, ti - tau[l] + 1), ti + 1)
+
+    n_added = 0
+    link_terms = {}
+    for s in S_selected:
+        fi = m.addVars(L, range(nT), lb=0.0, name=f"vi8_fi[{s}]")
+        rm = m.addVars(L, range(nT), lb=0.0, name=f"vi8_rm[{s}]")
+        fo = m.addVars(Ltr, range(nT), lb=0.0, name=f"vi8_fo[{s}]")
+        wat = m.addVars(Ltr, range(nT), lb=0.0, name=f"vi8_wat[{s}]")
+
+        # 各期各災區的累積傷患（(8.9) 的係數要用）
+        cum = {}
+        for i in I:
+            run = 0.0
+            for ti, t in enumerate(T):
+                run += sum(sd["demand"][s][t][i].get(l, 0.0) for l in L)
+                cum[(i, ti)] = run
+
+        # (8.1) 災區人數守恆（(15)(16) 對 i 加總）
+        for l in L:
+            for ti, t in enumerate(T):
+                arrive = sum(sd["demand"][s][t][i].get(l, 0.0) for i in I)
+                prev = rm[l, ti - 1] if ti > 0 else 0.0
+                m.addConstr(rm[l, ti] == prev + arrive - fi[l, ti],
+                            f"VI8_1[{s},{l},{ti}]"); n_added += 1
+
+        # (8.2) CCP 等待區人數守恆（(17)(19)(20)(21) 對 j 加總）
+        for l in Ltr:
+            for ti in range(nT):
+                prev = wat[l, ti - 1] if ti > 0 else 0.0
+                done = fi[l, ti - tau[l]] if ti - tau[l] >= 0 else 0.0
+                m.addConstr(wat[l, ti] == prev + done - fo[l, ti],
+                            f"VI8_2[{s},{l},{ti}]"); n_added += 1
+
+        for ti, t in enumerate(T):
+            # (8.3)(8.4) 實體容量（(17)(18)(22)(23) 對 j 加總）
+            for l in Ltr:
+                m.addConstr(gp.quicksum(fi[l, r] for r in window(l, ti)) + wat[l, ti]
+                            <= kcap[l] * sumX, f"VI8_3[{s},{l},{ti}]"); n_added += 1
+            for l in [x for x in L if x not in Ltr]:
+                m.addConstr(gp.quicksum(fi[l, r] for r in window(l, ti))
+                            <= kcap[l] * sumX, f"VI8_4[{s},{l},{ti}]"); n_added += 1
+            # (8.5) 醫護（(17)(18)(24) 對 j 加總）
+            m.addConstr(gp.quicksum((1.0 / alpha[l])
+                                    * gp.quicksum(fi[l, r] for r in window(l, ti))
+                                    for l in L) <= sumV,
+                        f"VI8_5[{s},{ti}]"); n_added += 1
+            # (8.6) CCP 救護車（(13) 對 j 加總）
+            m.addConstr(gp.quicksum(fi[l, ti] for l in Ltr) <= kap * sumU,
+                        f"VI8_6[{s},{ti}]"); n_added += 1
+            # (8.8) 醫院收治（VI-3 對 h 加總）
+            rhs8 = sum(min(eta * params["hospital_ambulance_fleet"][h],
+                           sd["hospital_receiving_capacity"][s][h][t]) for h in H)
+            m.addConstr(gp.quicksum(fo[l, ti] for l in Ltr) <= rhs8,
+                        f"VI8_8[{s},{ti}]"); n_added += 1
+            # (8.9) 入口道路（VI-1 對 i, j 加總）
+            coef_in = {j: sum(min(cap_ij[i][j] * sd["road_availability_ij"][s][i][j][t],
+                                  cum[(i, ti)]) for i in I) for j in J}
+            m.addConstr(gp.quicksum(fi[l, ti] for l in L)
+                        <= gp.quicksum(coef_in[j] * X[j] for j in J),
+                        f"VI8_9[{s},{ti}]"); n_added += 1
+            # (8.10) 出口道路（VI-2 對 j, h 加總）
+            coef_out = {j: sum(min(cap_jh[j][h] * sd["road_availability_jh"][s][j][h][t],
+                                   kcap_tr) for h in H) for j in J}
+            m.addConstr(gp.quicksum(fo[l, ti] for l in Ltr)
+                        <= gp.quicksum(coef_out[j] * X[j] for j in J),
+                        f"VI8_10[{s},{ti}]"); n_added += 1
+
+        # (8.7) 物資（(17)(25) 對 j 加總；整個規劃期間一條）
+        m.addConstr(gp.quicksum(beta[l] * fi[l, ti] for l in L for ti in range(nT))
+                    <= sumY, f"VI8_7[{s}]"); n_added += 1
+
+        # 連結式的右手邊：前兩項與 (10) 的前兩項逐項相同，後兩項是運送成本，
+        # 彙總後已無法分辨路徑，故以最小單價取下界。
+        link_terms[s] = (
+            gp.quicksum(rho[l] * rm[l, ti] for l in L for ti in range(nT))
+            + gp.quicksum(delta[l] * wat[l, ti] for l in Ltr for ti in range(nT))
+            + min_tij * gp.quicksum(fi[l, ti] for l in L for ti in range(nT))
+            + min_tjh * gp.quicksum(fo[l, ti] for l in Ltr for ti in range(nT))
+        )
+
+    if multi_cut:
+        for s in S_selected:
+            m.addConstr(theta[s] >= link_terms[s], f"VI8_link[{s}]"); n_added += 1
+    else:
+        # single-cut：聚合 θ 代表 Σ p_s θ_s，故下界也要用同一組權重加總
+        m.addConstr(theta["__agg__"]
+                    >= gp.quicksum(norm_probs[s] * link_terms[s] for s in S_selected),
+                    "VI8_link_agg"); n_added += 1
+    return n_added
+
+
 def build_master(instance: dict[str, Any], S_selected: list[str],
                  norm_probs: dict[str, float],
                  time_limit: float = 3600.0, mip_gap: float = 0.01,
                  multi_cut: bool = True,
                  risk_cfg: dict[str, Any] | None = None,
-                 lbf_enabled: bool = False):
+                 lbf_enabled: bool = False,
+                 vi_cfg: dict[str, Any] | None = None):
     """建 Benders master：一階變數 + 一階限制式 + θ 變數。
 
     Returns (model, vars_dict)；vars_dict 含 X/V/U/Y 與 theta（{s: var} 或 {"__agg__": var}）。
@@ -465,6 +707,8 @@ def build_master(instance: dict[str, Any], S_selected: list[str],
     J      = sets["J"]
     H      = sets["H"]
     params = instance["deterministic_parameters"]
+
+    _vi = model_core.vi_flags(vi_cfg)
 
     m = gp.Model("Benders_Master")
     m.setParam("OutputFlag", 0)
@@ -507,19 +751,69 @@ def build_master(instance: dict[str, Any], S_selected: list[str],
             f"Hosp_Supply_{h}",
         )
     for j in J:
-        m.addConstr(V[j] <= params["ccp_staff_upper_bound"][j]     * X[j], f"Logic_V_{j}")
+        # VI-4：(5) → (5′)。master 是第一階段真正做決策的地方，這兩條要加在這裡。
+        _v_ub = (model_core.vi_staff_ub(params, j, sets["L"]) if _vi["VI-4"]
+                 else params["ccp_staff_upper_bound"][j])
+        m.addConstr(V[j] <= _v_ub * X[j], f"Logic_V_{j}")
         m.addConstr(U[j] <= params["ccp_ambulance_upper_bound"][j] * X[j], f"Logic_U_{j}")
         m.addConstr(
             gp.quicksum(Y[h, j] for h in H) <= params["ccp_supply_upper_bound"][j] * X[j],
             f"Logic_Y_{j}",
         )
+        if _vi["VI-5"]:
+            # VI-5：開了站就必須配置醫護與物資
+            m.addConstr(X[j] <= V[j], f"VI5_staff_{j}")
+            m.addConstr(X[j] <= gp.quicksum(Y[h, j] for h in H), f"VI5_supply_{j}")
 
     mv = {"X": X, "V": V, "U": U, "Y": Y, "theta": theta,
           "first_stage_cost_expr": first_stage_cost}
+
+    # ---- VI-6 / VI-7：θ_s 的下界與上界 ----
+    # 本模型具 relatively complete recourse，未加切割時 master 的 LP 鬆弛最佳值
+    # 恰為 0；VI-6 給 θ_s 一個立即可用的非零下界，是成本最低的一條。
+    vi_theta_lb = {}
+    vi_theta_ub = {}
+    if _vi["VI-6"] or _vi["VI-7"]:
+        # 剛 addVar 出來的變數要先 update 才能讀寫屬性
+        m.update()
+        lb_tl = float(getattr(config, "VI_THETA_LB_TIME_LIMIT", 120.0))
+        for s in S_selected:
+            if _vi["VI-7"]:
+                vi_theta_ub[s] = _vi_theta_upper(instance, s)
+            if _vi["VI-6"]:
+                q_lo = _vi_theta_lower(instance, s, lb_tl)
+                if q_lo is not None and q_lo > 0.0:
+                    vi_theta_lb[s] = q_lo
+        if multi_cut:
+            for s in S_selected:
+                if s in vi_theta_lb:
+                    theta[s].lb = max(theta[s].lb, vi_theta_lb[s])
+                if s in vi_theta_ub:
+                    theta[s].ub = vi_theta_ub[s]
+        else:
+            agg = theta["__agg__"]
+            if len(vi_theta_lb) == len(S_selected):
+                agg.lb = max(agg.lb,
+                             sum(norm_probs[s] * vi_theta_lb[s] for s in S_selected))
+            if len(vi_theta_ub) == len(S_selected):
+                agg.ub = sum(norm_probs[s] * vi_theta_ub[s] for s in S_selected)
+    mv["vi_theta_lb"] = vi_theta_lb
+    mv["vi_theta_ub"] = vi_theta_ub
+
     if risk_cfg is not None:
         risk_core.attach_risk_to_master(m, mv, S_selected, norm_probs, risk_cfg)
     if lbf_enabled:
         _embed_lbf_in_master(m, mv, instance, S_selected, norm_probs)
+
+    # ---- VI-8：每情境彙總鬆弛 ----
+    # 必須排在 risk 層之後 —— 它掛的是 θ_s，而 risk 層只改目標式不動 θ_s，
+    # 故兩者互不干擾；排在 LBF 之後則是為了讓 master 的變數編號穩定、好對照。
+    vi8_rows = 0
+    if _vi["VI-8"]:
+        vi8_rows = _embed_vi8_in_master(m, mv, instance, S_selected,
+                                        norm_probs, multi_cut)
+    mv["vi_flags"] = _vi
+    mv["vi8_rows"] = vi8_rows
     return m, mv
 
 
@@ -905,6 +1199,7 @@ def solve_classic(
     max_iterations: int | None = None,
     verbose: bool = True,
     risk_cfg: dict[str, Any] | None = None,
+    vi_cfg: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Solve the RP with the classic multi-cut L-shaped loop.
 
@@ -939,11 +1234,13 @@ def solve_classic(
         mip_gap=mip_gap,
         multi_cut=multi_cut,
         risk_cfg=risk_cfg,
+        vi_cfg=vi_cfg,
     )
     master.setParam("NumericFocus", 1)
 
     oracles = {
-        s: ScenarioOracle(instance, s, time_limit=time_limit, threads=1)
+        s: ScenarioOracle(instance, s, time_limit=time_limit, threads=1,
+                          vi_cfg=vi_cfg)
         for s in S_selected
     }
 
@@ -1098,6 +1395,7 @@ def solve_bbc(
     diagnostic_stop_after_first_incumbent: bool = False,
     verbose: bool = True,
     risk_cfg: dict[str, Any] | None = None,
+    vi_cfg: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Solve the RP with Branch-and-Benders-Cut lazy constraints.
 
@@ -1177,6 +1475,7 @@ def solve_bbc(
         multi_cut=multi_cut,
         risk_cfg=risk_cfg,
         lbf_enabled=lbf_enabled,
+        vi_cfg=vi_cfg,
     )
     master.setParam("LazyConstraints", 1)
     master.setParam("PreCrush", 1)
@@ -1214,6 +1513,7 @@ def solve_bbc(
             time_limit=time_limit,
             threads=1,
             env=oracle_envs.get(s),
+            vi_cfg=vi_cfg,
         )
         for s in S_selected
     }
@@ -1944,6 +2244,10 @@ def solve_bbc(
         "use_user_cuts": use_user_cuts,
         "pareto_enabled": pareto_enabled,
         "lbf_enabled": lbf_enabled,
+        "vi_flags": mv.get("vi_flags", {}),
+        "vi8_rows": mv.get("vi8_rows", 0),
+        "vi_theta_lb": mv.get("vi_theta_lb", {}),
+        "vi_theta_ub": mv.get("vi_theta_ub", {}),
         "incumbent_early_termination": incumbent_early_term,
         "parallel_oracles": parallel_oracles,
         "cache_hits": cache_hits,

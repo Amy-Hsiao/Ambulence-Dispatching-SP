@@ -275,12 +275,13 @@ def gate1(inst, out, time_limit, env):
     out(" 關卡一 · 最佳值一致（extensive form；抓 EXACT 與 OPT 切掉最佳解的錯誤）")
     out("-" * 100)
 
-    def solve(vis, label):
+    def solve(vis, label, use_project_vi=False):
         t0 = time.time()
         m = None
         try:
-            m, v, touched = vir.build_extensive(inst, vis, time_limit=time_limit,
-                                                mip_gap=0.0, env=env, name=label)
+            m, v, touched = vir.build_extensive(
+                inst, vis, time_limit=time_limit, mip_gap=0.0, env=env,
+                name=label, use_project_vi=use_project_vi)
             m.optimize()
             st = m.status
             has = m.SolCount > 0
@@ -309,7 +310,7 @@ def gate1(inst, out, time_limit, env):
             out("  原始模型本身就無解 —— 這不是 VI 的問題，請先檢查 instance 與參數。")
         else:
             out("  請放寬 --time-limit，或改用較小的 instance。")
-        return {vid: "INCONCLUSIVE" for vid in vir.MODEL_VIS}, base, {}, None
+        return {vid: "INCONCLUSIVE" for vid in vir.MODEL_VIS}, base, {}, None, None
 
     out(f"  {'配置':<24}{'ObjVal':>20}{'|Δ|':>12}{'相對Δ':>11}"
         f"{'vars':>8}{'constrs':>9}{'收緊':>6}{'新增':>6}{'刪除':>6}{'秒':>7}  判定")
@@ -317,11 +318,15 @@ def gate1(inst, out, time_limit, env):
         f"{base['nv']:>8}{base['nc']:>9}{'—':>6}{'—':>6}{'—':>6}{base['secs']:>7.1f}  —")
 
     verdict, detail = {}, {}
-    combo = None
-    cases = [((vid,), vid) for vid in vir.MODEL_VIS]
-    cases.append((tuple(vir.MODEL_VIS), "VI-1..VI-5 全開"))
-    for vis, label in cases:
-        r = solve(vis, label.replace(" ", "_"))
+    combo = project = None
+    cases = [((vid,), vid, False) for vid in vir.MODEL_VIS]
+    cases.append((tuple(vir.MODEL_VIS), "VI-1..VI-5 全開", False))
+    # 最後一列改由 model core 依 config.VI_* 自己加 VI，本模組一條都不套。
+    # 這一列比對的是「參考實作」與「專案實作」是否等價 —— 兩份獨立寫成的
+    # 程式若給出同一個最佳值與同一組限制式數，才算真的實作對了。
+    cases.append(((), "config 實作（專案程式）", True))
+    for vis, label, use_proj in cases:
+        r = solve(vis, label.replace(" ", "_"), use_project_vi=use_proj)
         tc = r["touched"]
         effective = tc["changed"] + tc["added"]
         if r["status"] in FATAL_STATUS:
@@ -337,7 +342,7 @@ def gate1(inst, out, time_limit, env):
             drel = dab / max(1.0, abs(base["obj"]))
             if violated(drel, REL_TOL_GATE1):
                 mark, res = "**FAIL**", "FAIL"
-            elif effective == 0:
+            elif effective == 0 and not use_proj:
                 # 目標值一樣，但這條在本 instance 上一條限制式都沒收緊／沒新增，
                 # 等於什麼都沒驗到。報 PASS 會給人錯誤的安全感。
                 mark, res = "VACUOUS", "VACUOUS"
@@ -348,7 +353,13 @@ def gate1(inst, out, time_limit, env):
             f"{tc['removed']:>6}{r['secs']:>7.1f}  {mark}")
         rec = dict(obj=r["obj"], abs_delta=dab, rel_delta=drel, touched=tc,
                    vars=r["nv"], constrs=r["nc"], status=sname(r["status"]), result=res)
-        if len(vis) == 1:
+        if use_proj:
+            # 專案實作自己加 VI，touched 一律為 0，VACUOUS 的判定不適用
+            res = "FAIL" if res == "FAIL" else ("PASS" if r["status"] == GRB.OPTIMAL
+                                                else "INCONCLUSIVE")
+            project = res
+            detail["PROJECT"] = rec
+        elif len(vis) == 1:
             verdict[vis[0]] = res
             detail[vis[0]] = rec
         else:
@@ -357,8 +368,10 @@ def gate1(inst, out, time_limit, env):
     out("")
     out("  「收緊／新增／刪除」＝該 VI 實際改動的限制式條數。收緊＋新增為 0 時判 VACUOUS：")
     out("  目標值雖然一樣，但這條在本 instance 上根本沒作用，通過與否沒有資訊。")
-    out("  最後一列「五條全開」用來抓 VI 之間互相干擾才出現的錯誤，它失敗會讓整份驗證失敗。")
-    return verdict, base, detail, combo
+    out("  「五條全開」用來抓 VI 之間互相干擾才出現的錯誤，它失敗會讓整份驗證失敗。")
+    out("  最後一列「config 實作」是 model core 依 config.VI_* 自己加的 VI（本驗證程式")
+    out("  一條都沒套）。它與「五條全開」的目標值必須一致 —— 兩份獨立實作互相對照。")
+    return verdict, base, detail, combo, project
 
 
 # ===================================================================== #
@@ -581,7 +594,7 @@ def self_test(inst, out, env, time_limit, sub_time_limit, seed):
         vir.SABOTAGE = dict(sab)
         try:
             if gate == 1:
-                v, _b, _d, _c = gate1(inst, Quiet(), time_limit, env)
+                v, _b, _d, _c, _p = gate1(inst, Quiet(), time_limit, env)
             else:
                 v, _d = gate2(inst, Quiet(), 4, seed, env, sub_time_limit)
             got = v.get(vid, "NO DATA")
@@ -721,12 +734,12 @@ def _run(args, inst, out, gates, env):
     t0 = time.time()
     v1 = v2 = v3 = {}
     d1 = d2 = d3 = {}
-    base = combo = None
+    base = combo = project = None
     gate1_ran = False
     st_ok, st_rows = None, {}
     try:
         if 1 in gates:
-            v1, base, d1, combo = gate1(inst, out, args.time_limit, env)
+            v1, base, d1, combo, project = gate1(inst, out, args.time_limit, env)
             gate1_ran = True
         if 2 in gates:
             v2, d2 = gate2(inst, out, args.samples, args.seed, env, args.sub_time_limit)
@@ -736,7 +749,7 @@ def _run(args, inst, out, gates, env):
                 out(" 關卡三需要關卡一的最佳解，先補跑一次基準求解……")
                 # 補跑的判定一併採納。之前把它丟掉，導致補跑印出的 FAIL 不會
                 # 進入總判定，整份報告會在畫面上有 FAIL 的情況下說「全部通過」。
-                v1, base, d1, combo = gate1(inst, out, args.time_limit, env)
+                v1, base, d1, combo, project = gate1(inst, out, args.time_limit, env)
                 gate1_ran = True
                 gates = gates | {1}
             v3, d3 = gate3(inst, out, base, env, args.sub_time_limit)
@@ -807,11 +820,15 @@ def _run(args, inst, out, gates, env):
         out(f" {'合併':<7}{'VI-1..VI-5 五條同時開啟':<24}{'—':<7}{'extensive':<14}"
             f"{cm:>16}{'—':>14}{'—':>14}   {'**FAIL**' if cm == 'FAIL' else cm}")
         summary["COMBO"] = dict(name="VI-1..VI-5 五條同時開啟", gate1=cm, overall=cm)
+        pm = project or "NO DATA"
+        out(f" {'實作':<7}{'config 實作（專案程式）':<24}{'—':<7}{'extensive':<14}"
+            f"{pm:>16}{'—':>14}{'—':>14}   {'**FAIL**' if pm == 'FAIL' else pm}")
+        summary["PROJECT"] = dict(name="config 實作（專案程式）", gate1=pm, overall=pm)
     out("-" * 100)
     total = len(vir.VI_META)
     n_pass = counts.get("PASS", 0)
     n_fail_vi = counts.get("**FAIL**", 0)
-    n_fail = n_fail_vi + (1 if combo == "FAIL" else 0)
+    n_fail = n_fail_vi + (1 if combo == "FAIL" else 0) + (1 if project == "FAIL" else 0)
     other = total - n_pass - n_fail_vi
     line = f" 通過 {n_pass} / {total} 條"
     if n_fail:

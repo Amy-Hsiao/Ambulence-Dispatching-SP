@@ -98,6 +98,12 @@ MODEL_LABEL = {"dro_box": "DRO-box", "dro_ellipsoidal": "DRO-ellipsoidal",
                "dro_polyhedral": "DRO-polyhedral"}
 DEFAULT_TIME_LIMIT = 7200.0
 
+# 情境數（2026-09 由 5 改為 50）。
+# 注意：這個值會在 get_instance() 裡覆寫 config.SCENARIOS 後才生成 instance。
+# 舊版只有 S_all[:n_scen]（單純截斷），在 config.SCENARIOS = 5 的情況下
+# 就算下 --scenarios 50 也只會拿到 5 個情境，而且不會有任何警告。
+DEFAULT_SCENARIOS = 50
+
 _ALL_VI_OFF = {"all": False}
 _ALL_VI_ON = {"all": True}
 _RS = int(getattr(config, "BENDERS_ROOT_SEED_ITERS", 300))
@@ -138,18 +144,36 @@ def sname(st) -> str:
 # ===================================================================== #
 # instance 快取（一次只留一個規模，避免三份大 instance 同時佔記憶體）        #
 # ===================================================================== #
-_INSTANCE_CACHE: dict[str, dict] = {}
+_INSTANCE_CACHE: dict[tuple[str, int], dict] = {}
 
 
-def get_instance(scale: str) -> dict:
-    if scale not in _INSTANCE_CACHE:
-        for k in list(_INSTANCE_CACHE):        # 換規模就把上一個放掉
-            if k != scale:
-                _INSTANCE_CACHE.pop(k, None)
+def get_instance(scale: str, n_scen: int) -> dict:
+    """生成指定規模、指定情境數的 instance。
+
+    config.generate_data() 在函式內部讀模組層級的 SCENARIOS，所以要拿到
+    n_scen 個情境，必須「先設 config.SCENARIOS 再呼叫 generate_data」。
+    情境依 index 決定亂數種子，故 S=5 的 5 個情境就是 S=50 的前 5 個（巢狀）。
+    """
+    key = (scale, int(n_scen))
+    if key not in _INSTANCE_CACHE:
+        _INSTANCE_CACHE.clear()                # 換規模/情境數就把上一個放掉
+        prev = getattr(config, "SCENARIOS", None)
         t0 = time.time()
-        _INSTANCE_CACHE[scale] = config.generate_data(scale=scale)
-        print(f"   （生成 {scale} instance：{time.time() - t0:.1f}s）", flush=True)
-    return _INSTANCE_CACHE[scale]
+        try:
+            config.SCENARIOS = int(n_scen)
+            inst = config.generate_data(scale=scale)
+        finally:
+            if prev is not None:
+                config.SCENARIOS = prev
+        got = len(inst["sets"]["S"])
+        if got != int(n_scen):
+            raise RuntimeError(
+                f"要求 {n_scen} 個情境，generate_data 只給了 {got} 個 —— "
+                "請檢查 config.generate_data 是否仍在函式內讀 SCENARIOS。")
+        _INSTANCE_CACHE[key] = inst
+        print(f"   （生成 {scale} / S={n_scen} instance：{time.time() - t0:.1f}s）",
+              flush=True)
+    return _INSTANCE_CACHE[key]
 
 
 def norm_probs_of(instance: dict, S_sel: list[str]) -> dict[str, float]:
@@ -292,7 +316,18 @@ def sanity_flags(row: dict, time_limit: float) -> str:
         if isinstance(nd, (int, float)) and nd == 0 and row.get("method_id") != 1:
             f.append("節點數為0")
         rst = row.get("root_seed_time")
-        if isinstance(rst, (int, float)) and rst > 0.15 * time_limit:
+        # 門檻要高於 config.BENDERS_ROOT_SEED_TIME_LIMIT（預設 0.15），否則
+        # 「seeding 正常用滿預算」每一格都會被標成異常，63 格全是雜訊。
+        # 這裡只抓「超出預算仍在跑」的真異常；預算關閉時就退回固定門檻。
+        _budget_frac = getattr(config, "BENDERS_ROOT_SEED_TIME_LIMIT", None)
+        try:
+            _budget_frac = float(_budget_frac)
+        except (TypeError, ValueError):
+            _budget_frac = 0.0
+        if not (0.0 < _budget_frac <= 1.0):
+            _budget_frac = 0.15
+        _seed_alarm = min(0.95, _budget_frac + 0.10)
+        if isinstance(rst, (int, float)) and rst > _seed_alarm * time_limit:
             f.append(f"root_seeding佔{rst / time_limit * 100:.0f}%時限")
         if row.get("method_id") == 8:
             vf = row.get("vi_flags")
@@ -326,10 +361,10 @@ def run_cell(scale, model_type, method_id, time_limit, mip_gap, n_scen, dry_run)
     try:
         # 連 instance 生成與 risk_cfg 都包進來 —— 第 49 格才第一次生成 large，
         # 那時已經跑了四天，不能因為一個 MemoryError 就讓整批陣亡。
-        instance = get_instance(scale)
+        instance = get_instance(scale, n_scen)
         sets = instance["sets"]
-        S_all = sets["S"]
-        S_sel = S_all if n_scen is None else S_all[:n_scen]
+        # instance 已經是照 n_scen 生成的，全部拿來用（不再做截斷）
+        S_sel = list(sets["S"])
         row.update(n_I=len(sets["I"]), n_J=len(sets["J"]), n_H=len(sets["H"]),
                    n_T=len(sets["T"]), n_S=len(S_sel))
         risk_cfg = risk_core.make_risk_cfg(model_type)
@@ -694,7 +729,8 @@ def main(argv=None):
                     help="階梯編號，1=Extensive … 8=全堆疊")
     ap.add_argument("--time-limit", type=float, default=DEFAULT_TIME_LIMIT)
     ap.add_argument("--mip-gap", type=float, default=None)
-    ap.add_argument("--scenarios", type=int, default=None)
+    ap.add_argument("--scenarios", type=int, default=DEFAULT_SCENARIOS,
+                    help="情境數 |S|（會覆寫 config.SCENARIOS 後才生成 instance）")
     ap.add_argument("--tag", default="")
     ap.add_argument("--fresh", action="store_true",
                     help="不續跑，從頭開始（舊進度檔會先備份不會刪除）")
@@ -735,6 +771,12 @@ def main(argv=None):
         ap.error(f"config.BENDERS_ROOT_CUT_ROUNDS = {_UC_ROUNDS}，第 5 段以後的 UC "
                  f"不會生效。請設為正數，或用 --methods 排除第 5 段以後。")
     mip_gap = getattr(config, "SP_MIP_GAP", 0.01) if args.mip_gap is None else args.mip_gap
+
+    # 在生任何 instance 之前就把 config.SCENARIOS 對齊本次的 --scenarios。
+    # 不這樣做的話，Config 分頁的 "SCENARIOS" 欄會照實記下 config.py 裡的舊值
+    # （例如 5），跟同一張表的 "情境數" 欄（50）互相矛盾 —— 日後回頭看會分不出
+    # 這份結果到底是幾個情境跑的。這正是 CCP_count_ablation 那張表出過的問題。
+    config.SCENARIOS = int(args.scenarios)
 
     RESULT_DIR.mkdir(parents=True, exist_ok=True)
     tag = f"_{args.tag}" if args.tag else ""

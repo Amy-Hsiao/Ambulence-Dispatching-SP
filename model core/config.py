@@ -127,6 +127,22 @@ BENDERS_ROOT_SEED_STALL_ROUNDS = 10 # seeded LB 連 10 輪改善不足門檻即�
 BENDERS_ROOT_SEED_LB_ABS_TOL = 1e-3   # 保留相容欄位；Papadakos seeding 不再使用絕對門檻
 BENDERS_ROOT_SEED_LB_REL_TOL = 5e-4   # seeded LB 單輪相對改善 < 0.05% 視為停滯
 BENDERS_ROOT_SEED_ROUND_HEUR_FREQ = 10
+
+# ── root seeding 的牆鐘預算（2026-09 新增）─────────────────────────────────
+# 背景：CCP_count_ablation_20260817 的 large／J≥30 三格全部 LB=-inf、nodes=0，
+#       root_seed_stop_reason=time_limit，root_seed_time 6,920~6,982 秒
+#       （總時限 7,200 秒的 96~97%）—— seeding 把時間吃光，B&C 一個節點都沒跑。
+#       即使 J=20 也吃掉 6,080 秒（84%）。
+# 作用：seeding 迴圈每一輪開始前檢查已用時間，超過預算就停止並讓出時間給 B&C。
+#       停止原因會記成 "seed_time_budget"，與既有的 "time_limit"（整體時限用盡）區分。
+# 取值：
+#     0 < v <= 1   視為「佔整體 time_limit 的比例」（0.15 → 7,200 秒時給 1,080 秒）
+#     v > 1        視為「絕對秒數」
+#     None / 0     關閉此上限，退回 2026-09 之前的行為（只受整體 time_limit 限制）
+# 為什麼砍它幾乎不痛：加入 LBF 之後，master 一開始就有 Jensen 結構下界，
+#       DRO_full_matrix 的 LBF 各格 root_seed_lb 已達 Extensive 下界的 97.5~98.3%，
+#       且只用 160~335 秒、13~34 輪就自行停止 —— 結構性下界已取代數千條種子割。
+BENDERS_ROOT_SEED_TIME_LIMIT = 0.15
 BENDERS_PAPADAKOS_BLEND   = 0.5
 BENDERS_PARETO_ENABLED    = True    # False = seeding/user cuts 僅加 standard cut，不建 core point
 BENDERS_PROGRESS_BOUND_FLOOR = -1e50

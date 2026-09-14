@@ -35,6 +35,33 @@ import risk_core
 
 
 # ====================================================================== #
+# Root seeding 的牆鐘預算                                                 #
+# ====================================================================== #
+def _resolve_root_seed_budget(time_limit: float) -> float | None:
+    """把 config.BENDERS_ROOT_SEED_TIME_LIMIT 解讀成「秒數」。
+
+        0 < v <= 1   → 佔整體 time_limit 的比例（0.15 且 time_limit=7200 → 1080 秒）
+        v > 1        → 絕對秒數
+        None / <= 0  → 回傳 None，代表不設上限（2026-09 之前的行為）
+
+    設此上限的理由見 config.BENDERS_ROOT_SEED_TIME_LIMIT 的註解：
+    seeding 若吃光時間，B&C 連一個節點都跑不到，master 的 ObjBound 會是 -inf。
+    """
+    raw = getattr(config, "BENDERS_ROOT_SEED_TIME_LIMIT", None)
+    if raw is None:
+        return None
+    try:
+        v = float(raw)
+    except (TypeError, ValueError):
+        return None
+    if v <= 0.0:
+        return None
+    budget = v * float(time_limit) if v <= 1.0 else v
+    # 至少留 1 秒，且不超過整體時限（比例 > 1 的絕對秒數也要夾住）
+    return max(1.0, min(budget, float(time_limit)))
+
+
+# ====================================================================== #
 # LBF — Lower Bounding Functional (Jensen-based average-scenario LP)      #
 # ====================================================================== #
 
@@ -1537,6 +1564,7 @@ def solve_bbc(
     root_seed_time = 0.0
     root_seed_lb = None
     root_seed_stop_reason = "not_run"
+    root_seed_time_budget = _resolve_root_seed_budget(time_limit)
     cache_hits = 0
     cache_misses = 0
     last_progress_print = start_time
@@ -1796,14 +1824,32 @@ def solve_bbc(
                     "B&BC ROOT SEEDING "
                     f"({'Papadakos dual-track' if pareto_enabled else 'standard cuts'}, "
                     f"max {root_seed_iters} LP iterations, "
-                    f"stop after {stall_limit} rounds with LB improvement < {lb_rel_tol * 100:.4f}%)"
+                    f"stop after {stall_limit} rounds with LB improvement < {lb_rel_tol * 100:.4f}%"
+                    + (f", wall-clock budget {root_seed_time_budget:.0f}s"
+                       if root_seed_time_budget is not None else ", no wall-clock budget")
+                    + ")"
                 )
                 print("=" * 70)
 
             for iter_no in range(1, root_seed_iters + 1):
-                remaining = time_limit - (time.time() - start_time)
+                now = time.time()
+                remaining = time_limit - (now - start_time)
                 if remaining <= 1.0:
                     root_seed_stop_reason = "time_limit"
+                    break
+                # seeding 自己的牆鐘預算：用完就把剩下的時間讓給 branch-and-cut。
+                # 在每一輪「開始前」檢查，故最多超出一輪 LP 的時間（實測數十秒）。
+                if (root_seed_time_budget is not None
+                        and (now - seed_start) >= root_seed_time_budget):
+                    root_seed_stop_reason = (
+                        f"seed_time_budget_{root_seed_time_budget:.0f}s"
+                    )
+                    if verbose:
+                        print(
+                            f"[root seed stop] 已用 {now - seed_start:.1f}s "
+                            f"≥ 預算 {root_seed_time_budget:.0f}s，"
+                            f"停止 seeding 並把剩餘 {remaining:.0f}s 交給 branch-and-cut"
+                        )
                     break
                 master.setParam("TimeLimit", max(1.0, remaining))
                 master.optimize()
@@ -1994,6 +2040,7 @@ def solve_bbc(
             "root_seed_lb": root_seed_lb,
             "root_seed_stop_reason": root_seed_stop_reason,
             "root_seed_time": root_seed_time,
+            "root_seed_time_budget": root_seed_time_budget,
             "root_cut_rounds": root_cut_rounds,
             "root_cut_rounds_done": 0,
             "use_user_cuts": use_user_cuts,
@@ -2239,6 +2286,7 @@ def solve_bbc(
         "root_seed_lb": root_seed_lb,
         "root_seed_stop_reason": root_seed_stop_reason,
         "root_seed_time": root_seed_time,
+        "root_seed_time_budget": root_seed_time_budget,
         "root_cut_rounds": root_cut_rounds,
         "root_cut_rounds_done": root_cut_rounds_done,
         "use_user_cuts": use_user_cuts,
